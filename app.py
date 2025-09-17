@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
+import matplotlib.pyplot as plt
 import io
 import os
 import tempfile
@@ -113,7 +114,7 @@ def analyze_shareholder_changes(excel_file):
         changes_df = pd.DataFrame(changes)
         
         if changes_df.empty:
-            return None, None, "No changes detected."
+            return None, None, None, None, None, None, None, "No changes detected."
         
         # Pivot table for output
         pivot_df = changes_df.pivot_table(
@@ -137,7 +138,7 @@ def analyze_shareholder_changes(excel_file):
         exits = counts.get('exit', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         entries = counts.get('entry', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         
-        # Create grouped bar chart with Plotly
+        # Create Plotly chart for web display
         fig = go.Figure()
         
         x = date_pairs
@@ -201,14 +202,38 @@ def analyze_shareholder_changes(excel_file):
             font=dict(family="Arial", size=12)
         )
         
-        return pivot_df, fig, None
+        return pivot_df, fig, None, increases, decreases, exits, entries, date_pairs
     
     except ValueError as e:
-        return None, None, f"Error: {str(e)}"
+        return None, None, None, None, None, None, None, f"Error: {str(e)}"
     except Exception as e:
-        return None, None, f"An unexpected error occurred: {str(e)}"
+        return None, None, None, None, None, None, None, f"An unexpected error occurred: {str(e)}"
 
-def generate_pdf(pivot_df, fig):
+def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, output):
+    try:
+        plt.figure(figsize=(10, 6))
+        x = np.arange(len(date_pairs))
+        width = 0.2
+        
+        plt.bar(x - 1.5*width, increases, width, label='Increase', color='#4CAF50')
+        plt.bar(x - 0.5*width, decreases, width, label='Decrease', color='#F44336')
+        plt.bar(x + 0.5*width, exits, width, label='Exit', color='#2196F3')
+        plt.bar(x + 1.5*width, entries, width, label='Entry', color='#FFC107')
+        
+        plt.xlabel('Date Transition')
+        plt.ylabel('Number of Shareholders')
+        plt.title('Shareholder Changes Across Dates')
+        plt.xticks(x, date_pairs, rotation=45)
+        plt.legend()
+        plt.tight_layout()
+        
+        plt.savefig(output, format='png', dpi=300)
+        plt.close()
+        return True, None
+    except Exception as e:
+        return False, f"Error generating matplotlib plot: {str(e)}"
+
+def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs):
     try:
         with tempfile.TemporaryDirectory() as tmpdirname:
             # Save pivot table to temporary Excel file
@@ -216,12 +241,11 @@ def generate_pdf(pivot_df, fig):
             with pd.ExcelWriter(temp_excel, engine='openpyxl') as writer:
                 pivot_df.to_excel(writer, index=False, sheet_name='Changes')
             
-            # Save plot as PNG
+            # Generate matplotlib plot
             plot_path = os.path.join(tmpdirname, "plot.png")
-            try:
-                fig.write_image(plot_path, format="png")
-            except Exception as e:
-                return None, f"Error saving plot image: {str(e)}"
+            success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_path)
+            if not success:
+                return None, error
             
             # Initialize PDF
             pdf = FPDF(orientation='L', unit='mm', format='A4')
@@ -289,7 +313,7 @@ uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
 if uploaded_file is not None:
     if st.button("Analyze"):
         with st.spinner("Analyzing data..."):
-            pivot_df, fig, error = analyze_shareholder_changes(uploaded_file)
+            pivot_df, fig, error, increases, decreases, exits, entries, date_pairs = analyze_shareholder_changes(uploaded_file)
         
         if error:
             st.error(error)
@@ -315,29 +339,32 @@ if uploaded_file is not None:
             except Exception as e:
                 st.error(f"Error generating Excel: {str(e)}")
             
-            # Display Plot
+            # Display Plot (Plotly)
             st.header("Shareholder Changes Visualization")
             st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
             st.plotly_chart(fig, use_container_width=True)
             
-            # Download Plot
+            # Download Plot (Matplotlib)
             plot_output = io.BytesIO()
             try:
-                fig.write_image(plot_output, format="png")
-                plot_output.seek(0)
-                st.download_button(
-                    label="Download Plot PNG",
-                    data=plot_output,
-                    file_name="shareholder_changes_plot.png",
-                    mime="image/png",
-                    key="download_plot"
-                )
+                success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
+                if success:
+                    plot_output.seek(0)
+                    st.download_button(
+                        label="Download Plot PNG",
+                        data=plot_output,
+                        file_name="shareholder_changes_plot.png",
+                        mime="image/png",
+                        key="download_plot"
+                    )
+                else:
+                    st.error(error)
             except Exception as e:
                 st.error(f"Error saving plot image: {str(e)}")
             
             # Generate and Download PDF
             with st.spinner("Generating PDF report..."):
-                pdf_data, pdf_error = generate_pdf(pivot_df, fig)
+                pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
             if pdf_error:
                 st.error(pdf_error)
             else:
