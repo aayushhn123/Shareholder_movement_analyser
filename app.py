@@ -299,11 +299,13 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                     pdf.cell(width, 10, val_str, border=1, align='L', fill=True)
                 pdf.ln()
             
-            # Add plot
-            pdf.ln(10)
+            # Start new page for Visualization
+            pdf.add_page()
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "Visualization", ln=True, align='L')
-            pdf.image(plot_path, x=10, y=None, w=page_width)
+            
+            # Add plot directly below the header
+            pdf.image(plot_path, x=10, y=pdf.get_y(), w=page_width)
             
             # Save PDF
             pdf_path = os.path.join(tmpdirname, "report.pdf")
