@@ -1,9 +1,12 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import numpy as np
-import mplcursors
 import io
+import base64
+import subprocess
+import os
+import tempfile
 
 def analyze_shareholder_changes(excel_file):
     try:
@@ -36,7 +39,7 @@ def analyze_shareholder_changes(excel_file):
         
         changes = []
         # Consecutive comparisons (15-22, 22-29)
-        for i in range(2):  # First two transitions
+        for i in range(2):
             date1 = dates[i]
             date2 = dates[i + 1]
             date_label = f"{date1[-2:]} to {date2[-2:]}" if date1.startswith('20') else f"{date1} to {date2}"
@@ -124,53 +127,80 @@ def analyze_shareholder_changes(excel_file):
         
         # Reorder columns to ensure 15-22, 22-29, 15-29
         date_columns = [col for col in pivot_df.columns if col not in ['Name', 'Action']]
-        ordered_columns = sorted(date_columns, key=lambda x: ('15 to 29' not in x, x))  # Ensure 15-29 is last
+        ordered_columns = sorted(date_columns, key=lambda x: ('15 to 29' not in x, x))
         pivot_df = pivot_df[['Name', 'Action'] + ordered_columns]
         
         # Aggregate counts for visualization
         counts = changes_df.groupby(['Date Transition', 'Action']).size().unstack(fill_value=0)
-        date_pairs = sorted(counts.index, key=lambda x: ('15 to 29' not in x, x))  # Ensure 15-29 is last
+        date_pairs = sorted(counts.index, key=lambda x: ('15 to 29' not in x, x))
         increases = counts.get('increase', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         decreases = counts.get('decrease', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         exits = counts.get('exit', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         entries = counts.get('entry', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         
-        # Create grouped bar chart
-        x = np.arange(len(date_pairs))
+        # Create grouped bar chart with Plotly
+        fig = go.Figure()
+        
+        x = date_pairs
         width = 0.2
         
-        fig, ax = plt.subplots(figsize=(12, 6))
-        bars1 = ax.bar(x - 1.5*width, increases, width, label='Increase', color='#4CAF50')
-        bars2 = ax.bar(x - 0.5*width, decreases, width, label='Decrease', color='#F44336')
-        bars3 = ax.bar(x + 0.5*width, exits, width, label='Exit', color='#2196F3')
-        bars4 = ax.bar(x + 1.5*width, entries, width, label='Entry', color='#FFC107')
+        fig.add_trace(go.Bar(
+            x=x,
+            y=increases,
+            name='Increase',
+            marker_color='#4CAF50',
+            offset=-1.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in increases],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Increase</extra>'
+        ))
+        fig.add_trace(go.Bar(
+            x=x,
+            y=decreases,
+            name='Decrease',
+            marker_color='#F44336',
+            offset=-0.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in decreases],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Decrease</extra>'
+        ))
+        fig.add_trace(go.Bar(
+            x=x,
+            y=exits,
+            name='Exit',
+            marker_color='#2196F3',
+            offset=0.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in exits],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Exit</extra>'
+        ))
+        fig.add_trace(go.Bar(
+            x=x,
+            y=entries,
+            name='Entry',
+            marker_color='#FFC107',
+            offset=1.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in entries],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Entry</extra>'
+        ))
         
-        ax.set_xlabel('Date Transition')
-        ax.set_ylabel('Number of Shareholders')
-        ax.set_title('Shareholder Changes Across Dates')
-        ax.set_xticks(x)
-        ax.set_xticklabels(date_pairs, rotation=45, ha='right')
-        ax.legend()
-        
-        # Add data labels
-        for bars in [bars1, bars2, bars3, bars4]:
-            for bar in bars:
-                height = bar.get_height()
-                if height > 0:
-                    ax.text(bar.get_x() + bar.get_width() / 2, height, f'{int(height)}',
-                            ha='center', va='bottom', fontsize=10)
-        
-        # Add tooltips (note: mplcursors may not work in Streamlit's static display; consider Plotly for interactivity)
-        cursor = mplcursors.cursor([bars1, bars2, bars3, bars4], hover=True)
-        cursor.connect(
-            "add",
-            lambda sel: sel.annotation.set_text(
-                f"{sel.artist.get_label()}: {int(sel.target[1])} shareholders\n"
-                f"Date: {date_pairs[int(sel.target[0] // 1)]}"
-            )
+        fig.update_layout(
+            title='Shareholder Changes Across Dates',
+            xaxis_title='Date Transition',
+            yaxis_title='Number of Shareholders',
+            barmode='group',
+            xaxis_tickangle=-45,
+            legend=dict(x=0, y=1.0, bgcolor='rgba(255, 255, 255, 0)', bordercolor='rgba(255, 255, 255, 0)'),
+            margin=dict(b=150),
+            showlegend=True,
+            plot_bgcolor='white',
+            font=dict(family="Arial", size=12)
         )
-        
-        plt.tight_layout()
         
         return pivot_df, fig, None
     
@@ -179,57 +209,136 @@ def analyze_shareholder_changes(excel_file):
     except Exception as e:
         return None, None, f"An unexpected error occurred: {str(e)}"
 
+def generate_pdf(pivot_df, fig):
+    # Creating temporary directory for LaTeX processing
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        # Save plot as PNG
+        plot_path = os.path.join(tmpdirname, "plot.png")
+        fig.write_image(plot_path, format="png")
+        
+        # Convert table to LaTeX format
+        table_latex = "\\begin{tabular}{ll" + "r" * (len(pivot_df.columns) - 2) + "}\n\\hline\n"
+        table_latex += " & ".join([col.replace("_", "\\_") for col in pivot_df.columns]) + " \\\\\n\\hline\n"
+        for _, row in pivot_df.iterrows():
+            table_latex += " & ".join([str(val).replace("_", "\\_") for val in row]) + " \\\\\n"
+        table_latex += "\\hline\n\\end{tabular}"
+        
+        # LaTeX document
+        latex_content = f"""
+        \\documentclass{{article}}
+        \\usepackage{{geometry}}
+        \\usepackage{{graphicx}}
+        \\usepackage{{booktabs}}
+        \\usepackage{{parskip}}
+        \\usepackage[utf8]{{inputenc}}
+        \\usepackage{{amsmath}}
+        \\usepackage{{fontenc}}
+        \\usepackage{{lmodern}}
+        \\geometry{{a4paper, margin=1in}}
+        \\title{{Shareholder Changes Report}}
+        \\author{{Generated by Streamlit App}}
+        \\date{{September 2025}}
+        \\begin{{document}}
+        \\maketitle
+        \\section*{{Summary Table}}
+        \\begin{{center}}
+        {table_latex}
+        \\end{{center}}
+        \\section*{{Visualization}}
+        \\begin{{center}}
+        \\includegraphics[width=\\textwidth]{{{os.path.basename(plot_path)}}}
+        \\end{{center}}
+        \\end{{document}}
+        """
+        
+        # Write LaTeX file
+        tex_path = os.path.join(tmpdirname, "report.tex")
+        with open(tex_path, "w") as f:
+            f.write(latex_content)
+        
+        # Compile LaTeX to PDF
+        try:
+            subprocess.run(
+                ["latexmk", "-pdf", "-interaction=nonstopmode", tex_path],
+                cwd=tmpdirname,
+                check=True,
+                capture_output=True
+            )
+            pdf_path = os.path.join(tmpdirname, "report.pdf")
+            with open(pdf_path, "rb") as f:
+                pdf_data = f.read()
+            return pdf_data
+        except subprocess.CalledProcessError as e:
+            return None, f"Error generating PDF: {e.stderr.decode()}"
+        finally:
+            # Clean up LaTeX auxiliary files
+            subprocess.run(["latexmk", "-c"], cwd=tmpdirname, capture_output=True)
+
 # Streamlit App
 st.set_page_config(page_title="Shareholder Changes Analyzer", layout="wide")
 
 st.title("Shareholder Changes Analyzer")
 st.markdown("""
 Upload an Excel file with at least three sheets representing different dates. 
-The app will analyze changes in shareholder holdings and provide a summary table, downloadable Excel, and a visualization.
+Click the 'Analyze' button to process the data and generate a summary table, downloadable Excel, interactive visualization, and a PDF report.
 """)
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
 
 if uploaded_file is not None:
-    with st.spinner("Analyzing data..."):
-        pivot_df, fig, error = analyze_shareholder_changes(uploaded_file)
-    
-    if error:
-        st.error(error)
-    else:
-        st.success("Analysis complete!")
+    if st.button("Analyze"):
+        with st.spinner("Analyzing data..."):
+            pivot_df, fig, error = analyze_shareholder_changes(uploaded_file)
         
-        st.header("Summary Table")
-        st.dataframe(pivot_df, use_container_width=True)
-        
-        # Download Excel
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            pivot_df.to_excel(writer, index=False, sheet_name='Changes')
-        output.seek(0)
-        st.download_button(
-            label="Download Changes Excel",
-            data=output,
-            file_name="shareholder_changes.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_excel"
-        )
-        
-        # Display Plot
-        st.header("Shareholder Changes Visualization")
-        st.markdown("Note: Hover tooltips may not be interactive in this display. For full interactivity, download the plot or use a local environment.")
-        st.pyplot(fig)
-        
-        # Download Plot
-        plot_output = io.BytesIO()
-        fig.savefig(plot_output, format="png")
-        plot_output.seek(0)
-        st.download_button(
-            label="Download Plot PNG",
-            data=plot_output,
-            file_name="shareholder_changes_plot.png",
-            mime="image/png",
-            key="download_plot"
-        )
+        if error:
+            st.error(error)
+        else:
+            st.success("Analysis complete!")
+            
+            st.header("Summary Table")
+            st.dataframe(pivot_df, use_container_width=True)
+            
+            # Download Excel
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                pivot_df.to_excel(writer, index=False, sheet_name='Changes')
+            output.seek(0)
+            st.download_button(
+                label="Download Changes Excel",
+                data=output,
+                file_name="shareholder_changes.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_excel"
+            )
+            
+            # Display Plot
+            st.header("Shareholder Changes Visualization")
+            st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Download Plot
+            plot_output = io.BytesIO()
+            fig.write_image(plot_output, format="png")
+            plot_output.seek(0)
+            st.download_button(
+                label="Download Plot PNG",
+                data=plot_output,
+                file_name="shareholder_changes_plot.png",
+                mime="image/png",
+                key="download_plot"
+            )
+            
+            # Generate and Download PDF
+            pdf_data = generate_pdf(pivot_df, fig)
+            if isinstance(pdf_data, tuple):
+                st.error(pdf_data[1])
+            else:
+                st.download_button(
+                    label="Download PDF Report",
+                    data=pdf_data,
+                    file_name="shareholder_changes_report.pdf",
+                    mime="application/pdf",
+                    key="download_pdf"
+                )
 else:
-    st.info("Please upload an Excel file to begin.")
+    st.info("Please upload an Excel file and click 'Analyze' to begin.")
