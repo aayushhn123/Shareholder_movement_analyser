@@ -215,10 +215,10 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
         x = np.arange(len(date_pairs))
         width = 0.2
         
-        plt.bar(x - 1.5*width, increases, width, label='Increase', color='#4CAF50')
-        plt.bar(x - 0.5*width, decreases, width, label='Decrease', color='#F44336')
-        plt.bar(x + 0.5*width, exits, width, label='Exit', color='#2196F3')
-        plt.bar(x + 1.5*width, entries, width, label='Entry', color='#FFC107')
+        bars1 = plt.bar(x - 1.5*width, increases, width, label='Increase', color='#4CAF50')
+        bars2 = plt.bar(x - 0.5*width, decreases, width, label='Decrease', color='#F44336')
+        bars3 = plt.bar(x + 0.5*width, exits, width, label='Exit', color='#2196F3')
+        bars4 = plt.bar(x + 1.5*width, entries, width, label='Entry', color='#FFC107')
         
         plt.xlabel('Date Transition')
         plt.ylabel('Number of Shareholders')
@@ -226,6 +226,13 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
         plt.xticks(x, date_pairs, rotation=45)
         plt.legend()
         plt.tight_layout()
+        
+        # Add labels to bars
+        for bars, heights in [(bars1, increases), (bars2, decreases), (bars3, exits), (bars4, entries)]:
+            for bar, height in zip(bars, heights):
+                if height > 0:  # Only label bars with non-zero height
+                    plt.text(bar.get_x() + bar.get_width() / 2, height,
+                             f'{int(height)}', ha='center', va='bottom')
         
         plt.savefig(output, format='png', dpi=300)
         plt.close()
@@ -271,16 +278,25 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             
             # Header
             for col, width in zip(pivot_df.columns, col_widths):
-                pdf.cell(width, 10, str(col), border=1, align='C')
+                pdf.set_fill_color(200, 200, 200)  # Light gray for header
+                pdf.cell(width, 10, str(col), border=1, align='C', fill=True)
             pdf.ln()
             
-            # Table rows
+            # Table rows with color coding based on Action
             for _, row in pivot_df.iterrows():
+                action = row['Action']
+                if action in ['increase', 'entry']:
+                    pdf.set_fill_color(76, 175, 80)  # Green for increase/entry
+                elif action in ['decrease', 'exit']:
+                    pdf.set_fill_color(244, 67, 54)  # Red for decrease/exit
+                else:
+                    pdf.set_fill_color(240, 240, 240)  # Light gray for others
+                
                 for val, width in zip(row, col_widths):
                     val_str = str(val)
                     if len(val_str) > 30:  # Truncate long text
                         val_str = val_str[:27] + "..."
-                    pdf.cell(width, 10, val_str, border=1, align='L')
+                    pdf.cell(width, 10, val_str, border=1, align='L', fill=True)
                 pdf.ln()
             
             # Add plot
