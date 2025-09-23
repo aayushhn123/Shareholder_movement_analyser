@@ -287,13 +287,15 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             pdf.set_fill_color(200, 200, 200)  # Light gray for header
             start_y = pdf.get_y()
             max_height = 5  # Initial height per line
-            for col, width in zip(pivot_df.columns, col_widths):
+            for i, (col, width) in enumerate(zip(pivot_df.columns, col_widths)):
                 text = str(col)
                 # Estimate number of lines based on average character width
                 avg_char_width = pdf.get_string_width('a')  # Approximate width of one character
                 text_width = pdf.get_string_width(text)
                 num_lines = max(1, int(text_width / width) + 1)  # Minimum 1 line, add 1 if it wraps
                 height = max_height * num_lines
+                if i == 0:  # For "Name" column, fill the entire height with gray
+                    pdf.rect(pdf.get_x(), start_y, width, 10, 'F')  # Fill from start_y to next row (10mm)
                 pdf.multi_cell(width, max_height, text, border=1, align='C', fill=True)
                 # Move to next column on the same row
                 current_x = pdf.get_x()
@@ -303,7 +305,7 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                 else:
                     pdf.set_x(current_x)
                 max_height = max(max_height, height)  # Update max height if needed
-            pdf.set_y(start_y + max_height)  # Move to the row below based on tallest header
+            pdf.set_y(start_y + 10)  # Move to the row below, fixed at 10mm for data rows
             
             # Table rows with color coding based on Action
             for _, row in pivot_df.iterrows():
