@@ -328,6 +328,14 @@ Click the 'Analyze' button to process the data and generate a summary table, dow
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
 
+if 'files_generated' not in st.session_state:
+    st.session_state.files_generated = False
+    st.session_state.excel_data = None
+    st.session_state.png_data = None
+    st.session_state.pdf_data = None
+    st.session_state.pivot_df = None
+    st.session_state.fig = None
+
 if uploaded_file is not None:
     if st.button("Analyze"):
         with st.spinner("Analyzing data..."):
@@ -338,60 +346,71 @@ if uploaded_file is not None:
         else:
             st.success("Analysis complete!")
             
-            st.header("Summary Table")
-            st.dataframe(pivot_df, use_container_width=True)
+            st.session_state.pivot_df = pivot_df
+            st.session_state.fig = fig
             
-            # Download Excel
+            # Generate and store Excel data
             output = io.BytesIO()
-            try:
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    pivot_df.to_excel(writer, index=False, sheet_name='Changes')
-                output.seek(0)
-                st.download_button(
-                    label="Download Changes Excel",
-                    data=output,
-                    file_name="shareholder_changes.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_excel"
-                )
-            except Exception as e:
-                st.error(f"Error generating Excel: {str(e)}")
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                pivot_df.to_excel(writer, index=False, sheet_name='Changes')
+            output.seek(0)
+            st.session_state.excel_data = output.getvalue()
             
-            # Display Plot (Plotly)
-            st.header("Shareholder Changes Visualization")
-            st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Download Plot (Matplotlib)
+            # Generate and store PNG data
             plot_output = io.BytesIO()
-            try:
-                success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
-                if success:
-                    plot_output.seek(0)
-                    st.download_button(
-                        label="Download Plot PNG",
-                        data=plot_output,
-                        file_name="shareholder_changes_plot.png",
-                        mime="image/png",
-                        key="download_plot"
-                    )
-                else:
-                    st.error(error)
-            except Exception as e:
-                st.error(f"Error saving plot image: {str(e)}")
+            success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
+            if success:
+                plot_output.seek(0)
+                st.session_state.png_data = plot_output.getvalue()
+            else:
+                st.error(error)
             
-            # Generate and Download PDF
+            # Generate and store PDF data
             with st.spinner("Generating PDF report..."):
                 pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
             if pdf_error:
                 st.error(pdf_error)
             else:
-                st.download_button(
-                    label="Download PDF Report",
-                    data=pdf_data,
-                    file_name="shareholder_changes_report.pdf",
-                    mime="application/pdf",
-                    key="download_pdf"
-                )
+                st.session_state.pdf_data = pdf_data
+            
+            st.session_state.files_generated = True
+    
+    if st.session_state.files_generated:
+        st.header("Summary Table")
+        st.dataframe(st.session_state.pivot_df, use_container_width=True)
+        
+        # Download Excel
+        st.download_button(
+            label="Download Changes Excel",
+            data=st.session_state.excel_data,
+            file_name="shareholder_changes.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_excel"
+        )
+        
+        # Display Plot (Plotly)
+        st.header("Shareholder Changes Visualization")
+        st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
+        st.plotly_chart(st.session_state.fig, use_container_width=True)
+        
+        # Download Plot (Matplotlib)
+        if st.session_state.png_data:
+            st.download_button(
+                label="Download Plot PNG",
+                data=st.session_state.png_data,
+                file_name="shareholder_changes_plot.png",
+                mime="image/png",
+                key="download_plot"
+            )
+        
+        # Download PDF
+        if st.session_state.pdf_data:
+            st.download_button(
+                label="Download PDF Report",
+                data=st.session_state.pdf_data,
+                file_name="shareholder_changes_report.pdf",
+                mime="application/pdf",
+                key="download_pdf"
+            )
 else:
     st.info("Please upload an Excel file and click 'Analyze' to begin.")
