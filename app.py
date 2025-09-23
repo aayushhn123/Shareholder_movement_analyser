@@ -295,15 +295,15 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             overall_num_lines = max(1, int(overall_text_width / overall_width) + 1)
             max_height = 5 * overall_num_lines  # 5mm per line, based on Overall column
             
+            current_x = pdf.get_x()
             for i, (col, width) in enumerate(zip(pivot_df.columns, col_widths)):
                 text = str(col)
                 # Fill background for the entire column height
-                pdf.rect(pdf.get_x(), start_y, width, max_height, 'F')
+                pdf.rect(current_x, start_y, width, max_height, 'F')
                 # Render text centered in the fixed height
-                pdf.multi_cell(width, max_height, text, border=1, align='C', ln=0)
-                # Move to next column on the same row
-                current_x = pdf.get_x()
-                pdf.set_x(current_x)
+                pdf.set_xy(current_x, start_y)  # Reset to start of column
+                pdf.multi_cell(width, max_height / overall_num_lines, text, border=1, align='C', ln=0)
+                current_x += width  # Move to next column position
             
             pdf.set_y(start_y + max_height)  # Move to the row below
             
