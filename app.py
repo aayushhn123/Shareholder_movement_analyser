@@ -278,23 +278,29 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             pdf.cell(0, 10, "Summary Table", ln=True, align='L')
             pdf.set_font("Arial", "", 10)
             
-            # Calculate column widths
+            # Calculate column widths with more balanced distribution
             page_width = pdf.w - 2 * pdf.l_margin
-            col_widths = [page_width * 0.3, page_width * 0.15] + [page_width * 0.55 / len(pivot_df.columns[2:])] * len(pivot_df.columns[2:])
+            num_data_cols = len(pivot_df.columns) - 2  # Exclude Name and Action
+            col_widths = [page_width * 0.25, page_width * 0.15] + [page_width * 0.60 / num_data_cols] * num_data_cols
             
             # Header with text wrapping on the same row
             pdf.set_fill_color(200, 200, 200)  # Light gray for header
             start_y = pdf.get_y()
+            max_height = 5  # Initial height per line
             for col, width in zip(pivot_df.columns, col_widths):
-                pdf.multi_cell(width, 5, str(col), border=1, align='C', fill=True)
+                # Measure the height needed for wrapping
+                lines = pdf.split_text_into_lines(str(col), width)
+                height = max_height * len(lines)
+                pdf.multi_cell(width, max_height, str(col), border=1, align='C', fill=True)
                 # Move to next column on the same row
                 current_x = pdf.get_x()
                 current_y = pdf.get_y()
-                if current_y > start_y:
+                if current_y > start_y + height:
                     pdf.set_xy(current_x, start_y)
                 else:
                     pdf.set_x(current_x)
-            pdf.set_y(start_y + 5)  # Move to the row below the header
+                max_height = max(max_height, height)  # Update max height if needed
+            pdf.set_y(start_y + max_height)  # Move to the row below based on tallest header
             
             # Table rows with color coding based on Action
             for _, row in pivot_df.iterrows():
