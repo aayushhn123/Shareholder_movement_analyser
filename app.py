@@ -282,12 +282,19 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             page_width = pdf.w - 2 * pdf.l_margin
             col_widths = [page_width * 0.3, page_width * 0.15] + [page_width * 0.55 / len(pivot_df.columns[2:])] * len(pivot_df.columns[2:])
             
-            # Header with text wrapping
+            # Header with text wrapping on the same row
             pdf.set_fill_color(200, 200, 200)  # Light gray for header
+            start_y = pdf.get_y()
             for col, width in zip(pivot_df.columns, col_widths):
-                pdf.multi_cell(width, 10, str(col), border=1, align='C', fill=True)
-                pdf.set_xy(pdf.get_x() - width, pdf.get_y())  # Move back to start of next column
-            pdf.ln()
+                pdf.multi_cell(width, 5, str(col), border=1, align='C', fill=True)
+                # Move to next column on the same row
+                current_x = pdf.get_x()
+                current_y = pdf.get_y()
+                if current_y > start_y:
+                    pdf.set_xy(current_x, start_y)
+                else:
+                    pdf.set_x(current_x)
+            pdf.set_y(start_y + 5)  # Move to the row below the header
             
             # Table rows with color coding based on Action
             for _, row in pivot_df.iterrows():
