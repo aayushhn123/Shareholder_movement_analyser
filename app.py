@@ -42,7 +42,7 @@ def analyze_shareholder_changes(excel_file):
         for i in range(2):
             date1 = dates[i]
             date2 = dates[i + 1]
-            date_label = f"{date1[-2:]} to {date2[-2:]}" if date1.startswith('20') else f"{date1} to {date2}"
+            date_label = f"{date1} to {date2}"
             
             h1_df = df_dict[date1].groupby(id_col)[holding_col].sum()
             h2_df = df_dict[date2].groupby(id_col)[holding_col].sum()
@@ -78,7 +78,7 @@ def analyze_shareholder_changes(excel_file):
         # Overall comparison (15-29)
         date1 = dates[0]
         date2 = dates[-1]
-        date_label = f"{date1[-2:]} to {date2[-2:]}" if date1.startswith('20') else f"{date1} to {date2}"
+        date_label = f"{date1} to {date2}"
         
         h1_df = df_dict[date1].groupby(id_col)[holding_col].sum()
         h2_df = df_dict[date2].groupby(id_col)[holding_col].sum()
@@ -125,14 +125,20 @@ def analyze_shareholder_changes(excel_file):
         ).reset_index()
         pivot_df = pivot_df.fillna(0)
         
-        # Reorder columns to ensure 15-22, 22-29, 15-29
+        # Reorder and rename columns
         date_columns = [col for col in pivot_df.columns if col not in ['Name', 'Action']]
-        ordered_columns = sorted(date_columns, key=lambda x: ('15 to 29' not in x, x))
+        # Define desired order: 15th_August to 22nd_August, 22nd_August to 29th_August, Overall_15th_August to 29th_August
+        desired_order = [f"{dates[0]} to {dates[1]}", f"{dates[1]} to {dates[2]}", f"Overall_{dates[0]} to {dates[2]}"]
+        ordered_columns = [col for col in desired_order if col in date_columns] + [col for col in date_columns if col not in desired_order]
         pivot_df = pivot_df[['Name', 'Action'] + ordered_columns]
+        
+        # Rename the last column
+        if len(ordered_columns) > 2:
+            pivot_df = pivot_df.rename(columns={ordered_columns[-1]: desired_order[-1]})
         
         # Aggregate counts for visualization
         counts = changes_df.groupby(['Date Transition', 'Action']).size().unstack(fill_value=0)
-        date_pairs = sorted(counts.index, key=lambda x: ('15 to 29' not in x, x))
+        date_pairs = sorted(counts.index, key=lambda x: (x not in [f"{dates[0]} to {dates[1]}", f"{dates[1]} to {dates[2]}"], x))
         increases = counts.get('increase', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         decreases = counts.get('decrease', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         exits = counts.get('exit', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
