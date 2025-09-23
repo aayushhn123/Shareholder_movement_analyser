@@ -288,10 +288,13 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             start_y = pdf.get_y()
             max_height = 5  # Initial height per line
             for col, width in zip(pivot_df.columns, col_widths):
-                # Measure the height needed for wrapping
-                lines = pdf.split_text_into_lines(str(col), width)
-                height = max_height * len(lines)
-                pdf.multi_cell(width, max_height, str(col), border=1, align='C', fill=True)
+                text = str(col)
+                # Estimate number of lines based on average character width
+                avg_char_width = pdf.get_string_width('a')  # Approximate width of one character
+                text_width = pdf.get_string_width(text)
+                num_lines = max(1, int(text_width / width) + 1)  # Minimum 1 line, add 1 if it wraps
+                height = max_height * num_lines
+                pdf.multi_cell(width, max_height, text, border=1, align='C', fill=True)
                 # Move to next column on the same row
                 current_x = pdf.get_x()
                 current_y = pdf.get_y()
