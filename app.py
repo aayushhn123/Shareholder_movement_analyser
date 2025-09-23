@@ -283,29 +283,29 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             num_data_cols = len(pivot_df.columns) - 2  # Exclude Name and Action
             col_widths = [page_width * 0.25, page_width * 0.15] + [page_width * 0.60 / num_data_cols] * num_data_cols
             
-            # Header with text wrapping on the same row
+            # Header with text wrapping on the same row, matching Overall column height
             pdf.set_fill_color(200, 200, 200)  # Light gray for header
             start_y = pdf.get_y()
-            max_height = 5  # Initial height per line
+            # Calculate height for Overall column
+            overall_col_idx = len(pivot_df.columns) - 1
+            overall_text = str(pivot_df.columns[overall_col_idx])
+            overall_width = col_widths[overall_col_idx]
+            avg_char_width = pdf.get_string_width('a')
+            overall_text_width = pdf.get_string_width(overall_text)
+            overall_num_lines = max(1, int(overall_text_width / overall_width) + 1)
+            max_height = 5 * overall_num_lines  # 5mm per line, based on Overall column
+            
             for i, (col, width) in enumerate(zip(pivot_df.columns, col_widths)):
                 text = str(col)
-                # Estimate number of lines based on average character width
-                avg_char_width = pdf.get_string_width('a')  # Approximate width of one character
-                text_width = pdf.get_string_width(text)
-                num_lines = max(1, int(text_width / width) + 1)  # Minimum 1 line, add 1 if it wraps
-                height = max_height * num_lines
-                if i == 0:  # For "Name" column, fill the entire height with gray
-                    pdf.rect(pdf.get_x(), start_y, width, 10, 'F')  # Fill from start_y to next row (10mm)
-                pdf.multi_cell(width, max_height, text, border=1, align='C', fill=True)
+                # Fill background for the entire column height
+                pdf.rect(pdf.get_x(), start_y, width, max_height, 'F')
+                # Render text centered in the fixed height
+                pdf.multi_cell(width, max_height, text, border=1, align='C', ln=0)
                 # Move to next column on the same row
                 current_x = pdf.get_x()
-                current_y = pdf.get_y()
-                if current_y > start_y + height:
-                    pdf.set_xy(current_x, start_y)
-                else:
-                    pdf.set_x(current_x)
-                max_height = max(max_height, height)  # Update max height if needed
-            pdf.set_y(start_y + 10)  # Move to the row below, fixed at 10mm for data rows
+                pdf.set_x(current_x)
+            
+            pdf.set_y(start_y + max_height)  # Move to the row below
             
             # Table rows with color coding based on Action
             for _, row in pivot_df.iterrows():
