@@ -203,6 +203,9 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
 # ---- PDF Report ----
 def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs):
     try:
+        if pivot_df is None:
+            return None, "No data to generate PDF."
+
         with tempfile.TemporaryDirectory() as tmpdirname:
             temp_excel = os.path.join(tmpdirname, "temp_changes.xlsx")
             with pd.ExcelWriter(temp_excel, engine="openpyxl") as writer:
@@ -294,18 +297,20 @@ if uploaded_file is not None:
 
         if error:
             st.error(error)
-        else:
+        elif pivot_df is not None:
             st.success("Analysis complete!")
             st.session_state.pivot_df = pivot_df
             st.session_state.fig = fig
 
+            # Excel output
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 pivot_df.to_excel(writer, index=False, sheet_name="Changes")
-                writer.book.active = 0  # ensure at least one sheet visible
+                writer.book.active = 0
             output.seek(0)
             st.session_state.excel_data = output.getvalue()
 
+            # PNG output
             plot_output = io.BytesIO()
             success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
             if success:
@@ -314,6 +319,7 @@ if uploaded_file is not None:
             else:
                 st.error(error)
 
+            # PDF output
             with st.spinner("Generating PDF report..."):
                 pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
             if pdf_error:
@@ -323,17 +329,18 @@ if uploaded_file is not None:
 
             st.session_state.files_generated = True
 
-    if st.session_state.files_generated:
+    if st.session_state.files_generated and st.session_state.pivot_df is not None:
         st.header("Summary Table")
         st.dataframe(st.session_state.pivot_df, use_container_width=True)
 
-        st.download_button(
-            label="Download Changes Excel",
-            data=st.session_state.excel_data,
-            file_name="shareholder_changes.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_excel"
-        )
+        if st.session_state.excel_data:
+            st.download_button(
+                label="Download Changes Excel",
+                data=st.session_state.excel_data,
+                file_name="shareholder_changes.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_excel"
+            )
 
         st.header("Shareholder Changes Visualization")
         st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
