@@ -246,14 +246,41 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
     except Exception as e:
         return False, f"Error generating matplotlib plot: {str(e)}"
 
+def generate_excel_data(pivot_df):
+    """Generate Excel data with proper error handling"""
+    try:
+        output = io.BytesIO()
+        
+        # Create a new workbook and worksheet
+        with pd.ExcelWriter(output, engine='openpyxl', mode='w') as writer:
+            # Ensure we have data to write
+            if pivot_df is not None and not pivot_df.empty:
+                pivot_df.to_excel(writer, index=False, sheet_name='Changes')
+                
+                # Get the worksheet and make it visible
+                workbook = writer.book
+                worksheet = workbook['Changes']
+                worksheet.sheet_state = 'visible'
+                workbook.active = worksheet
+            else:
+                # Create a dummy sheet if no data
+                dummy_df = pd.DataFrame({'Message': ['No changes detected']})
+                dummy_df.to_excel(writer, index=False, sheet_name='NoChanges')
+                
+                workbook = writer.book
+                worksheet = workbook['NoChanges']
+                worksheet.sheet_state = 'visible'
+                workbook.active = worksheet
+        
+        output.seek(0)
+        return output.getvalue(), None
+        
+    except Exception as e:
+        return None, f"Error generating Excel file: {str(e)}"
+
 def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs):
     try:
         with tempfile.TemporaryDirectory() as tmpdirname:
-            # Save pivot table to temporary Excel file
-            temp_excel = os.path.join(tmpdirname, "temp_changes.xlsx")
-            with pd.ExcelWriter(temp_excel, engine='openpyxl') as writer:
-                pivot_df.to_excel(writer, index=False, sheet_name='Changes')
-            
             # Generate matplotlib plot
             plot_path = os.path.join(tmpdirname, "plot.png")
             success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_path)
@@ -278,51 +305,54 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             pdf.cell(0, 10, "Summary Table", ln=True, align='L')
             pdf.set_font("Arial", "", 10)
             
-            # Calculate column widths with more balanced distribution
-            page_width = pdf.w - 2 * pdf.l_margin
-            num_data_cols = len(pivot_df.columns) - 2  # Exclude Name and Action
-            col_widths = [page_width * 0.25, page_width * 0.15] + [page_width * 0.60 / num_data_cols] * num_data_cols
-            
-            # Header with text wrapping on the same row, matching Overall column height
-            pdf.set_fill_color(200, 200, 200)  # Light gray for header
-            start_y = pdf.get_y()
-            # Calculate height for Overall column
-            overall_col_idx = len(pivot_df.columns) - 1
-            overall_text = str(pivot_df.columns[overall_col_idx])
-            overall_width = col_widths[overall_col_idx]
-            avg_char_width = pdf.get_string_width('a')
-            overall_text_width = pdf.get_string_width(overall_text)
-            overall_num_lines = max(1, int(overall_text_width / overall_width) + 1)
-            max_height = 5 * overall_num_lines  # 5mm per line, based on Overall column
-            
-            current_x = pdf.get_x()
-            for i, (col, width) in enumerate(zip(pivot_df.columns, col_widths)):
-                text = str(col)
-                # Fill background for the entire column height
-                pdf.rect(current_x, start_y, width, max_height, 'F')
-                # Render text centered in the fixed height
-                pdf.set_xy(current_x, start_y)  # Reset to start of column
-                pdf.multi_cell(width, max_height / overall_num_lines, text, border=1, align='C', ln=0)
-                current_x += width  # Move to next column position
-            
-            pdf.set_y(start_y + max_height)  # Move to the row below
-            
-            # Table rows with color coding based on Action
-            for _, row in pivot_df.iterrows():
-                action = row['Action']
-                if action in ['increase', 'entry']:
-                    pdf.set_fill_color(76, 175, 80)  # Green for increase/entry
-                elif action in ['decrease', 'exit']:
-                    pdf.set_fill_color(244, 67, 54)  # Red for decrease/exit
-                else:
-                    pdf.set_fill_color(240, 240, 240)  # Light gray for others
+            if pivot_df is not None and not pivot_df.empty:
+                # Calculate column widths with more balanced distribution
+                page_width = pdf.w - 2 * pdf.l_margin
+                num_data_cols = len(pivot_df.columns) - 2  # Exclude Name and Action
+                col_widths = [page_width * 0.25, page_width * 0.15] + [page_width * 0.60 / num_data_cols] * num_data_cols
                 
-                for val, width in zip(row, col_widths):
-                    val_str = str(val)
-                    if len(val_str) > 30:  # Truncate long text
-                        val_str = val_str[:27] + "..."
-                    pdf.cell(width, 10, val_str, border=1, align='L', fill=True)
-                pdf.ln()
+                # Header with text wrapping on the same row, matching Overall column height
+                pdf.set_fill_color(200, 200, 200)  # Light gray for header
+                start_y = pdf.get_y()
+                # Calculate height for Overall column
+                overall_col_idx = len(pivot_df.columns) - 1
+                overall_text = str(pivot_df.columns[overall_col_idx])
+                overall_width = col_widths[overall_col_idx]
+                avg_char_width = pdf.get_string_width('a')
+                overall_text_width = pdf.get_string_width(overall_text)
+                overall_num_lines = max(1, int(overall_text_width / overall_width) + 1)
+                max_height = 5 * overall_num_lines  # 5mm per line, based on Overall column
+                
+                current_x = pdf.get_x()
+                for i, (col, width) in enumerate(zip(pivot_df.columns, col_widths)):
+                    text = str(col)
+                    # Fill background for the entire column height
+                    pdf.rect(current_x, start_y, width, max_height, 'F')
+                    # Render text centered in the fixed height
+                    pdf.set_xy(current_x, start_y)  # Reset to start of column
+                    pdf.multi_cell(width, max_height / overall_num_lines, text, border=1, align='C', ln=0)
+                    current_x += width  # Move to next column position
+                
+                pdf.set_y(start_y + max_height)  # Move to the row below
+                
+                # Table rows with color coding based on Action
+                for _, row in pivot_df.iterrows():
+                    action = row['Action']
+                    if action in ['increase', 'entry']:
+                        pdf.set_fill_color(76, 175, 80)  # Green for increase/entry
+                    elif action in ['decrease', 'exit']:
+                        pdf.set_fill_color(244, 67, 54)  # Red for decrease/exit
+                    else:
+                        pdf.set_fill_color(240, 240, 240)  # Light gray for others
+                    
+                    for val, width in zip(row, col_widths):
+                        val_str = str(val)
+                        if len(val_str) > 30:  # Truncate long text
+                            val_str = val_str[:27] + "..."
+                        pdf.cell(width, 10, val_str, border=1, align='L', fill=True)
+                    pdf.ln()
+            else:
+                pdf.cell(0, 10, "No changes detected in the data.", ln=True, align='L')
             
             # Start new page for Visualization
             pdf.add_page()
@@ -356,6 +386,7 @@ uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
 if 'files_generated' not in st.session_state:
     st.session_state.files_generated = False
     st.session_state.excel_data = None
+    st.session_state.excel_error = None
     st.session_state.png_data = None
     st.session_state.pdf_data = None
     st.session_state.pivot_df = None
@@ -374,49 +405,56 @@ if uploaded_file is not None:
             st.session_state.pivot_df = pivot_df
             st.session_state.fig = fig
             
-            # Generate and store Excel data
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                pivot_df.to_excel(writer, index=False, sheet_name='Changes')
-            output.seek(0)
-            st.session_state.excel_data = output.getvalue()
+            # Generate and store Excel data with improved error handling
+            with st.spinner("Generating Excel file..."):
+                excel_data, excel_error = generate_excel_data(pivot_df)
+                st.session_state.excel_data = excel_data
+                st.session_state.excel_error = excel_error
             
             # Generate and store PNG data
-            plot_output = io.BytesIO()
-            success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
-            if success:
-                plot_output.seek(0)
-                st.session_state.png_data = plot_output.getvalue()
-            else:
-                st.error(error)
+            with st.spinner("Generating plot..."):
+                plot_output = io.BytesIO()
+                success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
+                if success:
+                    plot_output.seek(0)
+                    st.session_state.png_data = plot_output.getvalue()
+                else:
+                    st.error(error)
             
             # Generate and store PDF data
             with st.spinner("Generating PDF report..."):
                 pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
-            if pdf_error:
-                st.error(pdf_error)
-            else:
-                st.session_state.pdf_data = pdf_data
+                if pdf_error:
+                    st.error(pdf_error)
+                else:
+                    st.session_state.pdf_data = pdf_data
             
             st.session_state.files_generated = True
     
     if st.session_state.files_generated:
         st.header("Summary Table")
-        st.dataframe(st.session_state.pivot_df, use_container_width=True)
+        if st.session_state.pivot_df is not None and not st.session_state.pivot_df.empty:
+            st.dataframe(st.session_state.pivot_df, use_container_width=True)
+        else:
+            st.info("No changes detected in the shareholder data.")
         
         # Download Excel
-        st.download_button(
-            label="Download Changes Excel",
-            data=st.session_state.excel_data,
-            file_name="shareholder_changes.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_excel"
-        )
+        if st.session_state.excel_data and not st.session_state.excel_error:
+            st.download_button(
+                label="Download Changes Excel",
+                data=st.session_state.excel_data,
+                file_name="shareholder_changes.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_excel"
+            )
+        elif st.session_state.excel_error:
+            st.error(f"Excel generation failed: {st.session_state.excel_error}")
         
         # Display Plot (Plotly)
         st.header("Shareholder Changes Visualization")
         st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
-        st.plotly_chart(st.session_state.fig, use_container_width=True)
+        if st.session_state.fig:
+            st.plotly_chart(st.session_state.fig, use_container_width=True)
         
         # Download Plot (Matplotlib)
         if st.session_state.png_data:
