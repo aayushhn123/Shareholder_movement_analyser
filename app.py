@@ -7,14 +7,53 @@ import io
 import os
 import tempfile
 from fpdf import FPDF
+from datetime import datetime
+
+def parse_sheet_date(sheet_name):
+    """Parse different date formats from sheet names"""
+    # Try different formats
+    formats = [
+        '%d_%B_%Y',      # 15_August_2025
+        '%d-%b-%Y',      # 12-Sep-2025
+        '%d-%B-%Y',      # 12-September-2025
+        '%d_%b_%Y',      # 15_Sep_2025
+        '%Y-%m-%d',      # 2025-09-12
+        '%m-%d-%Y',      # 09-12-2025
+        '%d/%m/%Y',      # 12/09/2025
+        '%m/%d/%Y',      # 09/12/2025
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(sheet_name, fmt)
+        except ValueError:
+            continue
+    
+    # If no format works, return None
+    return None
 
 def analyze_shareholder_changes(excel_file):
     try:
         xls = pd.ExcelFile(excel_file)
         sheet_names = xls.sheet_names
-        dates = sorted(sheet_names)
-        if len(dates) < 3:
-            raise ValueError("At least three sheets are required for consecutive and overall comparisons.")
+        
+        # Parse and sort dates properly
+        sheet_dates = []
+        for sheet_name in sheet_names:
+            parsed_date = parse_sheet_date(sheet_name)
+            if parsed_date:
+                sheet_dates.append((sheet_name, parsed_date))
+            else:
+                st.warning(f"Could not parse date from sheet name: '{sheet_name}'. Skipping this sheet.")
+        
+        if len(sheet_dates) < 3:
+            raise ValueError("At least three sheets with valid dates are required for consecutive and overall comparisons.")
+        
+        # Sort by parsed date
+        sheet_dates.sort(key=lambda x: x[1])
+        dates = [sheet_name for sheet_name, _ in sheet_dates]
+        
+        st.info(f"Processing sheets in chronological order: {dates}")
         
         df_dict = {date: pd.read_excel(xls, sheet_name=date) for date in dates}
         
@@ -38,7 +77,8 @@ def analyze_shareholder_changes(excel_file):
         names = all_df[[id_col, name_col]].drop_duplicates().set_index(id_col)[name_col]
         
         changes = []
-        # Consecutive comparisons
+        
+        # ALL Consecutive comparisons (not just first two)
         for i in range(len(dates) - 1):
             date1 = dates[i]
             date2 = dates[i + 1]
@@ -75,7 +115,7 @@ def analyze_shareholder_changes(excel_file):
                     'Date Transition': date_label
                 })
         
-        # Overall comparison
+        # Overall comparison (first to last)
         date1 = dates[0]
         date2 = dates[-1]
         date_label = f"Overall_{date1} to {date2}"
@@ -125,15 +165,22 @@ def analyze_shareholder_changes(excel_file):
         ).reset_index()
         pivot_df = pivot_df.fillna(0)
         
-        # Reorder columns: consecutive first, overall last
+        # Reorder columns: consecutive first (in chronological order), overall last
         date_columns = [col for col in pivot_df.columns if col not in ['Name', 'Action']]
         consecutive_labels = [f"{dates[i]} to {dates[i+1]}" for i in range(len(dates)-1)]
-        ordered_columns = [col for col in consecutive_labels if col in date_columns] + [col for col in date_columns if col not in consecutive_labels]
-        pivot_df = pivot_df[['Name', 'Action'] + ordered_columns]
+        overall_labels = [col for col in date_columns if col.startswith('Overall_')]
+        
+        # Order: Name, Action, consecutive transitions (chronological), overall
+        ordered_columns = ['Name', 'Action'] + consecutive_labels + overall_labels
+        pivot_df = pivot_df[ordered_columns]
         
         # Aggregate counts for visualization
         counts = changes_df.groupby(['Date Transition', 'Action']).size().unstack(fill_value=0)
-        date_pairs = [col for col in ordered_columns if col in counts.index] + [col for col in counts.index if col not in ordered_columns]
+        
+        # Order date pairs: consecutive first, then overall
+        date_pairs = consecutive_labels + overall_labels
+        date_pairs = [dp for dp in date_pairs if dp in counts.index]
+        
         increases = counts.get('increase', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         decreases = counts.get('decrease', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         exits = counts.get('exit', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
@@ -212,7 +259,7 @@ def analyze_shareholder_changes(excel_file):
 
 def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, output):
     try:
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(12, 8))  # Made larger to accommodate more bars
         x = np.arange(len(date_pairs))
         width = 0.2
         
@@ -224,7 +271,7 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
         plt.xlabel('Date Transition')
         plt.ylabel('Number of Shareholders')
         plt.title('Shareholder Changes Across Dates')
-        plt.xticks(x, date_pairs, rotation=45)
+        plt.xticks(x, date_pairs, rotation=45, ha='right')
         plt.legend()
         plt.tight_layout()
         
@@ -235,7 +282,7 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
                     plt.text(bar.get_x() + bar.get_width() / 2, height,
                              f'{int(height)}', ha='center', va='bottom')
         
-        plt.savefig(output, format='png', dpi=300)
+        plt.savefig(output, format='png', dpi=300, bbox_inches='tight')
         plt.close()
         return True, None
     except Exception as e:
@@ -265,7 +312,7 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             pdf.cell(0, 10, "Shareholder Changes Report", ln=True, align='C')
             pdf.set_font("Arial", "", 12)
             pdf.cell(0, 10, "Generated by Streamlit App", ln=True, align='C')
-            pdf.cell(0, 10, "September 2025", ln=True, align='C')
+            pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align='C')
             pdf.ln(10)
             
             # Add pivot table
@@ -343,6 +390,14 @@ st.set_page_config(page_title="Shareholder Changes Analyzer", layout="wide")
 st.title("Shareholder Changes Analyzer")
 st.markdown("""
 Upload an Excel file with at least three sheets representing different dates. 
+The sheets will be automatically sorted by date, and the app will analyze all consecutive transitions plus an overall comparison.
+
+**Supported date formats in sheet names:**
+- `15_August_2025` or `15_Sep_2025`  
+- `12-Sep-2025` or `12-September-2025`
+- `2025-09-12` or `09-12-2025`
+- `12/09/2025` or `09/12/2025`
+
 Click the 'Analyze' button to process the data and generate a summary table, downloadable Excel, interactive visualization, and a PDF report.
 """)
 
@@ -434,4 +489,3 @@ if uploaded_file is not None:
             )
 else:
     st.info("Please upload an Excel file and click 'Analyze' to begin.")
-from fpdf import FPDF
