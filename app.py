@@ -435,8 +435,4 @@ if uploaded_file is not None:
             )
 else:
     st.info("Please upload an Excel file and click 'Analyze' to begin.")
-</xaiArtifact>
-
-### Supporting Files (Unchanged)
-1. **requirements.txt**
    
