@@ -12,144 +12,204 @@ def analyze_shareholder_changes(excel_file):
     try:
         xls = pd.ExcelFile(excel_file)
         sheet_names = xls.sheet_names
-        dates = sorted(sheet_names)  # assumes sheet names are dates or sortable
-        if len(dates) < 2:
-            raise ValueError("At least two sheets are required for comparison.")
-
-        # Read all sheets into dictionary
+        dates = sorted(sheet_names)
+        if len(dates) < 3:
+            raise ValueError("At least three sheets are required for consecutive and overall comparisons.")
+        
         df_dict = {date: pd.read_excel(xls, sheet_name=date) for date in dates}
-
+        
         id_col = 'PAN NO'
         name_col = 'NAME'
         holding_col = 'HOLDING '
-
-        # Validate required columns
+        
         for date, df in df_dict.items():
             if id_col not in df.columns or name_col not in df.columns or holding_col not in df.columns:
                 raise ValueError(f"Sheet '{date}' is missing one or more required columns: {id_col}, {name_col}, {holding_col}")
-
-        # Clean and standardize
+        
         all_data = []
         for date in dates:
             df = df_dict[date]
             df = df.groupby([id_col, name_col])[holding_col].sum().reset_index()
             df['Date'] = date
             all_data.append(df)
+        
         all_df = pd.concat(all_data, ignore_index=True)
+        
         names = all_df[[id_col, name_col]].drop_duplicates().set_index(id_col)[name_col]
-
+        
         changes = []
-
-        # Consecutive comparisons (dynamic)
+        # Consecutive comparisons
+        consecutive_labels = []
         for i in range(len(dates) - 1):
-            date1, date2 = dates[i], dates[i + 1]
+            date1 = dates[i]
+            date2 = dates[i + 1]
             date_label = f"{date1} to {date2}"
-
+            consecutive_labels.append(date_label)
+            
             h1_df = df_dict[date1].groupby(id_col)[holding_col].sum()
             h2_df = df_dict[date2].groupby(id_col)[holding_col].sum()
+            
             all_ids = set(h1_df.index) | set(h2_df.index)
-
+            
             for id_ in all_ids:
-                hold1, hold2 = h1_df.get(id_, 0), h2_df.get(id_, 0)
+                hold1 = h1_df.get(id_, 0)
+                hold2 = h2_df.get(id_, 0)
+                
                 if hold1 == hold2:
                     continue
-
+                
                 if hold1 == 0 and hold2 > 0:
-                    action, change_amount = 'entry', hold2
+                    action = 'entry'
+                    change_amount = hold2
                 elif hold2 > hold1:
-                    action, change_amount = 'increase', hold2 - hold1
+                    action = 'increase'
+                    change_amount = hold2 - hold1
                 elif hold2 < hold1:
-                    action, change_amount = ('exit' if hold2 == 0 else 'decrease'), hold2 - hold1
-
+                    action = 'exit' if hold2 == 0 else 'decrease'
+                    change_amount = hold2 - hold1
+                
                 name = names.get(id_, 'Unknown')
+                
                 changes.append({
                     'Name': name,
                     'Action': action,
                     'Change Amount': change_amount,
                     'Date Transition': date_label
                 })
-
-        # Overall comparison (first → last)
-        if len(dates) > 2:
-            date1, date2 = dates[0], dates[-1]
-            date_label = f"Overall_{date1} to {date2}"
-            h1_df = df_dict[date1].groupby(id_col)[holding_col].sum()
-            h2_df = df_dict[date2].groupby(id_col)[holding_col].sum()
-            all_ids = set(h1_df.index) | set(h2_df.index)
-
-            for id_ in all_ids:
-                hold1, hold2 = h1_df.get(id_, 0), h2_df.get(id_, 0)
-                if hold1 == hold2:
-                    continue
-
-                if hold1 == 0 and hold2 > 0:
-                    action, change_amount = 'entry', hold2
-                elif hold2 > hold1:
-                    action, change_amount = 'increase', hold2 - hold1
-                elif hold2 < hold1:
-                    action, change_amount = ('exit' if hold2 == 0 else 'decrease'), hold2 - hold1
-
-                name = names.get(id_, 'Unknown')
-                changes.append({
-                    'Name': name,
-                    'Action': action,
-                    'Change Amount': change_amount,
-                    'Date Transition': date_label
-                })
-
+        
+        # Overall comparison
+        date1 = dates[0]
+        date2 = dates[-1]
+        overall_label = f"Overall_{date1} to {date2}"
+        
+        h1_df = df_dict[date1].groupby(id_col)[holding_col].sum()
+        h2_df = df_dict[date2].groupby(id_col)[holding_col].sum()
+        
+        all_ids = set(h1_df.index) | set(h2_df.index)
+        
+        for id_ in all_ids:
+            hold1 = h1_df.get(id_, 0)
+            hold2 = h2_df.get(id_, 0)
+            
+            if hold1 == hold2:
+                continue
+            
+            if hold1 == 0 and hold2 > 0:
+                action = 'entry'
+                change_amount = hold2
+            elif hold2 > hold1:
+                action = 'increase'
+                change_amount = hold2 - hold1
+            elif hold2 < hold1:
+                action = 'exit' if hold2 == 0 else 'decrease'
+                change_amount = hold2 - hold1
+            
+            name = names.get(id_, 'Unknown')
+            
+            changes.append({
+                'Name': name,
+                'Action': action,
+                'Change Amount': change_amount,
+                'Date Transition': overall_label
+            })
+        
         changes_df = pd.DataFrame(changes)
-
+        
         if changes_df.empty:
             return None, None, None, None, None, None, None, "No changes detected."
-
-        # Pivot table
+        
+        # Pivot table for output
         pivot_df = changes_df.pivot_table(
             index=['Name', 'Action'],
             columns='Date Transition',
             values='Change Amount',
             aggfunc='first'
-        ).reset_index().fillna(0)
-
+        ).reset_index()
+        pivot_df = pivot_df.fillna(0)
+        
+        # Reorder columns: consecutive first, overall last
+        date_columns = [col for col in pivot_df.columns if col not in ['Name', 'Action']]
+        ordered_columns = [col for col in consecutive_labels if col in date_columns] + [col for col in date_columns if col not in consecutive_labels]
+        pivot_df = pivot_df[['Name', 'Action'] + ordered_columns]
+        
         # Aggregate counts for visualization
         counts = changes_df.groupby(['Date Transition', 'Action']).size().unstack(fill_value=0)
-        date_pairs = list(counts.index)
-        increases = counts.get('increase', pd.Series(0, index=counts.index)).tolist()
-        decreases = counts.get('decrease', pd.Series(0, index=counts.index)).tolist()
-        exits = counts.get('exit', pd.Series(0, index=counts.index)).tolist()
-        entries = counts.get('entry', pd.Series(0, index=counts.index)).tolist()
-
-        # Plotly chart
+        date_pairs = [col for col in consecutive_labels if col in counts.index] + [col for col in counts.index if col not in consecutive_labels]
+        increases = counts.get('increase', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
+        decreases = counts.get('decrease', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
+        exits = counts.get('exit', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
+        entries = counts.get('entry', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
+        
+        # Create Plotly chart for web display
         fig = go.Figure()
-        width = 0.2
+        
         x = date_pairs
-        fig.add_trace(go.Bar(x=x, y=increases, name='Increase', marker_color='#4CAF50',
-                             offset=-1.5*width, width=width, text=[int(i) if i > 0 else '' for i in increases],
-                             textposition='auto'))
-        fig.add_trace(go.Bar(x=x, y=decreases, name='Decrease', marker_color='#F44336',
-                             offset=-0.5*width, width=width, text=[int(i) if i > 0 else '' for i in decreases],
-                             textposition='auto'))
-        fig.add_trace(go.Bar(x=x, y=exits, name='Exit', marker_color='#2196F3',
-                             offset=0.5*width, width=width, text=[int(i) if i > 0 else '' for i in exits],
-                             textposition='auto'))
-        fig.add_trace(go.Bar(x=x, y=entries, name='Entry', marker_color='#FFC107',
-                             offset=1.5*width, width=width, text=[int(i) if i > 0 else '' for i in entries],
-                             textposition='auto'))
-
+        width = 0.2
+        
+        fig.add_trace(go.Bar(
+            x=x,
+            y=increases,
+            name='Increase',
+            marker_color='#4CAF50',
+            offset=-1.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in increases],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Increase</extra>'
+        ))
+        fig.add_trace(go.Bar(
+            x=x,
+            y=decreases,
+            name='Decrease',
+            marker_color='#F44336',
+            offset=-0.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in decreases],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Decrease</extra>'
+        ))
+        fig.add_trace(go.Bar(
+            x=x,
+            y=exits,
+            name='Exit',
+            marker_color='#2196F3',
+            offset=0.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in exits],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Exit</extra>'
+        ))
+        fig.add_trace(go.Bar(
+            x=x,
+            y=entries,
+            name='Entry',
+            marker_color='#FFC107',
+            offset=1.5*width,
+            width=width,
+            text=[int(i) if i > 0 else '' for i in entries],
+            textposition='auto',
+            hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Entry</extra>'
+        ))
+        
         fig.update_layout(
             title='Shareholder Changes Across Dates',
             xaxis_title='Date Transition',
             yaxis_title='Number of Shareholders',
             barmode='group',
             xaxis_tickangle=-45,
+            legend=dict(x=0, y=1.0, bgcolor='rgba(255, 255, 255, 0)', bordercolor='rgba(255, 255, 255, 0)'),
+            margin=dict(b=150),
             showlegend=True,
-            plot_bgcolor='white'
+            plot_bgcolor='white',
+            font=dict(family="Arial", size=12)
         )
-
+        
         return pivot_df, fig, None, increases, decreases, exits, entries, date_pairs
-
-    except Exception as e:
+    
+    except ValueError as e:
         return None, None, None, None, None, None, None, f"Error: {str(e)}"
-
+    except Exception as e:
+        return None, None, None, None, None, None, None, f"An unexpected error occurred: {str(e)}"
 
 def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, output):
     try:
@@ -238,7 +298,7 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                 pdf.rect(current_x, start_y, width, max_height, 'F')
                 # Render text centered in the fixed height
                 pdf.set_xy(current_x, start_y)  # Reset to start of column
-                pdf.multi_cell(width, max_height / overall_num_lines, text, border=1, align='C', ln=0)
+                pdf.multi_cell(width, 5, text, border=1, align='C', ln=0)
                 current_x += width  # Move to next column position
             
             pdf.set_y(start_y + max_height)  # Move to the row below
@@ -375,3 +435,8 @@ if uploaded_file is not None:
             )
 else:
     st.info("Please upload an Excel file and click 'Analyze' to begin.")
+</xaiArtifact>
+
+### Supporting Files (Unchanged)
+1. **requirements.txt**
+   
