@@ -11,11 +11,10 @@ import datetime
 
 # ---- Helper to parse sheet names into real dates ----
 def parse_sheet_date(name):
-    # Example: "15_August_2025"
     try:
         return datetime.datetime.strptime(name, "%d_%B_%Y").date()
     except ValueError:
-        return None  # fallback if parsing fails
+        return None
 
 # ---- Core Analyzer ----
 def analyze_shareholder_changes(excel_file):
@@ -206,10 +205,9 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
     try:
         with tempfile.TemporaryDirectory() as tmpdirname:
             temp_excel = os.path.join(tmpdirname, "temp_changes.xlsx")
-            with pd.ExcelWriter(temp_excel, engine='openpyxl') as writer:
-                pivot_df.to_excel(writer, index=False, sheet_name='Changes')
-                worksheet = writer.sheets['Changes']
-                worksheet.sheet_state = 'visible'  # Fix for IndexError
+            with pd.ExcelWriter(temp_excel, engine="openpyxl") as writer:
+                pivot_df.to_excel(writer, index=False, sheet_name="Changes")
+                writer.book.active = 0  # ensure at least one sheet visible
 
             plot_path = os.path.join(tmpdirname, "plot.png")
             success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_path)
@@ -302,10 +300,9 @@ if uploaded_file is not None:
             st.session_state.fig = fig
 
             output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                pivot_df.to_excel(writer, index=False, sheet_name='Changes')
-                worksheet = writer.sheets['Changes']
-                worksheet.sheet_state = 'visible'  # Fix for IndexError
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                pivot_df.to_excel(writer, index=False, sheet_name="Changes")
+                writer.book.active = 0  # ensure at least one sheet visible
             output.seek(0)
             st.session_state.excel_data = output.getvalue()
 
