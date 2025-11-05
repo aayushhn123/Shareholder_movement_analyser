@@ -321,7 +321,7 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                     disp_cols.append(c)
                 elif str(c).startswith("Overall_"):
                     base = str(c).replace("Overall_", "")
-                    disp_cols.append(f"Overall\n{base.replace(' to ', ' to\n')}")
+                    disp_cols.append("Overall\n" + base.replace(" to ", " to\n"))
                 else:
                     disp_cols.append(str(c).replace(" to ", " to\n"))
 
