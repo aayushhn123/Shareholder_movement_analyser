@@ -259,7 +259,10 @@ def analyze_shareholder_changes(excel_file):
 
 def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, output):
     try:
-        plt.figure(figsize=(12, 8))  # Made larger to accommodate more bars
+        if not increases or not decreases or not exits or not entries or not date_pairs:
+            return False, "Missing data for plot generation"
+        
+        plt.figure(figsize=(12, 8))
         x = np.arange(len(date_pairs))
         width = 0.2
         
@@ -278,7 +281,7 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
         # Add labels to bars
         for bars, heights in [(bars1, increases), (bars2, decreases), (bars3, exits), (bars4, entries)]:
             for bar, height in zip(bars, heights):
-                if height > 0:  # Only label bars with non-zero height
+                if height > 0:
                     plt.text(bar.get_x() + bar.get_width() / 2, height,
                              f'{int(height)}', ha='center', va='bottom')
         
@@ -290,11 +293,17 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
 
 def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs):
     try:
+        if pivot_df is None or increases is None:
+            return None, "Missing data for PDF generation"
+        
         with tempfile.TemporaryDirectory() as tmpdirname:
             # Save pivot table to temporary Excel file
             temp_excel = os.path.join(tmpdirname, "temp_changes.xlsx")
             with pd.ExcelWriter(temp_excel, engine='openpyxl') as writer:
                 pivot_df.to_excel(writer, index=False, sheet_name='Changes')
+                # Ensure sheet is visible
+                worksheet = writer.sheets['Changes']
+                worksheet.sheet_state = 'visible'
             
             # Generate matplotlib plot
             plot_path = os.path.join(tmpdirname, "plot.png")
@@ -339,83 +348,76 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             
             # Legend rows with colored text
             legend_colors = [
-                (0, 0, 0),      # Black for "0"
-                (76, 175, 80),  # Green
-                (244, 67, 54),  # Red
-                (255, 193, 7),  # Yellow
-                (33, 150, 243)  # Blue
+                (0, 0, 0),
+                (76, 175, 80),
+                (244, 67, 54),
+                (255, 193, 7),
+                (33, 150, 243)
             ]
             
             for i, (row_data, color) in enumerate(zip(legend_data[1:], legend_colors)):
                 for j, (text, width) in enumerate(zip(row_data, legend_col_widths)):
-                    if j == 0:  # Color the first column
+                    if j == 0:
                         pdf.set_text_color(*color)
                     else:
                         pdf.set_text_color(0, 0, 0)
                     pdf.cell(width, 10, text, border=1, align='L')
                 pdf.ln()
             
-            pdf.set_text_color(0, 0, 0)  # Reset to black
+            pdf.set_text_color(0, 0, 0)
             pdf.ln(5)
             
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "Summary Table", ln=True, align='L')
             pdf.set_font("Arial", "", 10)
             
-            # Calculate column widths with more balanced distribution
+            # Calculate column widths
             page_width = pdf.w - 2 * pdf.l_margin
-            num_data_cols = len(pivot_df.columns) - 2  # Exclude Name and Action
+            num_data_cols = len(pivot_df.columns) - 2
             col_widths = [page_width * 0.25, page_width * 0.15] + [page_width * 0.60 / num_data_cols] * num_data_cols
             
-            # Header with text wrapping on the same row, matching Overall column height
-            pdf.set_fill_color(200, 200, 200)  # Light gray for header
+            # Header
+            pdf.set_fill_color(200, 200, 200)
             start_y = pdf.get_y()
-            # Calculate height for Overall column
             overall_col_idx = len(pivot_df.columns) - 1
             overall_text = str(pivot_df.columns[overall_col_idx])
             overall_width = col_widths[overall_col_idx]
-            avg_char_width = pdf.get_string_width('a')
             overall_text_width = pdf.get_string_width(overall_text)
             overall_num_lines = max(1, int(overall_text_width / overall_width) + 1)
-            max_height = 5 * overall_num_lines  # 5mm per line, based on Overall column
+            max_height = 5 * overall_num_lines
             
             current_x = pdf.get_x()
             for i, (col, width) in enumerate(zip(pivot_df.columns, col_widths)):
                 text = str(col)
-                # Fill background for the entire column height
                 pdf.rect(current_x, start_y, width, max_height, 'F')
-                # Render text centered in the fixed height
-                pdf.set_xy(current_x, start_y)  # Reset to start of column
-                pdf.set_text_color(0, 0, 0)  # Black text for headers
+                pdf.set_xy(current_x, start_y)
+                pdf.set_text_color(0, 0, 0)
                 pdf.multi_cell(width, 5, text, border=1, align='C', ln=0)
-                current_x += width  # Move to next column position
+                current_x += width
             
-            pdf.set_y(start_y + max_height)  # Move to the row below
+            pdf.set_y(start_y + max_height)
             
-            # Table rows with colored text based on Action
+            # Table rows
             for _, row in pivot_df.iterrows():
                 action = row['Action']
                 
                 for i, (val, width) in enumerate(zip(row, col_widths)):
                     val_str = str(val)
-                    if len(val_str) > 30:  # Truncate long text
+                    if len(val_str) > 30:
                         val_str = val_str[:27] + "..."
                     
-                    # Color the Action column (index 1)
-                    if i == 1:  # Action column
+                    if i == 1:
                         if action == 'entry':
-                            pdf.set_text_color(255, 193, 7)  # Yellow
+                            pdf.set_text_color(255, 193, 7)
                         elif action == 'exit':
-                            pdf.set_text_color(33, 150, 243)  # Blue
+                            pdf.set_text_color(33, 150, 243)
                         elif action == 'increase':
-                            pdf.set_text_color(76, 175, 80)  # Green
+                            pdf.set_text_color(76, 175, 80)
                         elif action == 'decrease':
-                            pdf.set_text_color(244, 67, 54)  # Red
+                            pdf.set_text_color(244, 67, 54)
                         else:
-                            pdf.set_text_color(0, 0, 0)  # Black
-                    # Set text color based on Action for data columns (not Name/Action columns)
-                    elif i >= 2:  # Data columns start from index 2
-                        # Check if value is non-zero (comparing the actual value from row, not the string)
+                            pdf.set_text_color(0, 0, 0)
+                    elif i >= 2:
                         val_numeric = row.iloc[i]
                         try:
                             is_non_zero = float(val_numeric) != 0.0
@@ -424,29 +426,26 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                         
                         if is_non_zero:
                             if action in ['increase', 'entry']:
-                                pdf.set_text_color(76, 175, 80)  # Green text
+                                pdf.set_text_color(76, 175, 80)
                             elif action in ['decrease', 'exit']:
-                                pdf.set_text_color(244, 67, 54)  # Red text
+                                pdf.set_text_color(244, 67, 54)
                             else:
-                                pdf.set_text_color(0, 0, 0)  # Black text
+                                pdf.set_text_color(0, 0, 0)
                         else:
-                            pdf.set_text_color(0, 0, 0)  # Black text for zero values
+                            pdf.set_text_color(0, 0, 0)
                     else:
-                        pdf.set_text_color(0, 0, 0)  # Black text for Name column
+                        pdf.set_text_color(0, 0, 0)
                     
                     pdf.cell(width, 10, val_str, border=1, align='L')
                 
                 pdf.ln()
             
-            # Reset text color to black
             pdf.set_text_color(0, 0, 0)
             
-            # Start new page for Visualization
+            # Visualization page
             pdf.add_page()
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "Visualization", ln=True, align='L')
-            
-            # Add plot directly below the header
             pdf.image(plot_path, x=10, y=pdf.get_y(), w=page_width)
             
             # Save PDF
@@ -485,6 +484,11 @@ if 'files_generated' not in st.session_state:
     st.session_state.pdf_data = None
     st.session_state.pivot_df = None
     st.session_state.fig = None
+    st.session_state.increases = None
+    st.session_state.decreases = None
+    st.session_state.exits = None
+    st.session_state.entries = None
+    st.session_state.date_pairs = None
 
 if uploaded_file is not None:
     if st.button("Analyze"):
@@ -493,146 +497,149 @@ if uploaded_file is not None:
         
         if error:
             st.error(error)
+            st.session_state.files_generated = False
+        elif pivot_df is None:
+            st.error("Analysis returned no data. Please check your input file.")
+            st.session_state.files_generated = False
         else:
             st.success("Analysis complete!")
             
+            # Store all data in session state
             st.session_state.pivot_df = pivot_df
             st.session_state.fig = fig
+            st.session_state.increases = increases
+            st.session_state.decreases = decreases
+            st.session_state.exits = exits
+            st.session_state.entries = entries
+            st.session_state.date_pairs = date_pairs
             
-            # Generate and store Excel data with colored text
-            output = io.BytesIO()
+            # Generate Excel with error handling
             try:
+                output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     pivot_df.to_excel(writer, index=False, sheet_name='Changes', startrow=8)
-        
-                    # Apply text color formatting
+                    
                     from openpyxl.styles import Font, Alignment
                     workbook = writer.book
                     worksheet = writer.sheets['Changes']
-        
-                    # Ensure the sheet is visible
                     worksheet.sheet_state = 'visible'
-        
-                    # Add Legend at the top
+                    
+                    # Add Legend
                     worksheet.merge_cells('A1:B1')
                     legend_title = worksheet['A1']
                     legend_title.value = 'Legend'
                     legend_title.font = Font(bold=True, size=14)
                     legend_title.alignment = Alignment(horizontal='center')
-        
-                    # Legend headers
+                    
                     worksheet['A2'] = 'Value/Color'
                     worksheet['B2'] = 'Meaning'
                     worksheet['A2'].font = Font(bold=True)
                     worksheet['B2'].font = Font(bold=True)
-        
-                    # Legend rows
+                    
                     worksheet['A3'] = '0'
                     worksheet['B3'] = 'No change in Holding'
-        
+                    
                     worksheet['A4'] = 'Green text'
                     worksheet['B4'] = 'Increase in holding'
                     worksheet['A4'].font = Font(color='4CAF50')
-        
+                    
                     worksheet['A5'] = 'Red text'
                     worksheet['B5'] = 'Decrease in holding'
                     worksheet['A5'].font = Font(color='F44336')
-        
+                    
                     worksheet['A6'] = 'Yellow text (entry)'
                     worksheet['B6'] = 'New shareholder entry'
                     worksheet['A6'].font = Font(color='FFC107')
-        
+                    
                     worksheet['A7'] = 'Blue text (exit)'
                     worksheet['B7'] = 'Shareholder exit'
                     worksheet['A7'].font = Font(color='2196F3')
-        
-                    # Find the Action column (column B, index 2) - now at row 9 onwards
+                    
                     action_col = 2
-                    # Data columns start from column C (index 3)
                     data_start_col = 3
-        
-                    # Iterate through rows (starting from row 10, after header at row 9)
+                    
                     for row_idx in range(10, len(pivot_df) + 10):
                         action_cell = worksheet.cell(row=row_idx, column=action_col)
                         action_value = action_cell.value
-            
-                        # Color the Action column itself
+                        
                         if action_value == 'entry':
-                            action_cell.font = Font(color='FFC107')  # Yellow
+                            action_cell.font = Font(color='FFC107')
                         elif action_value == 'exit':
-                            action_cell.font = Font(color='2196F3')  # Blue
+                            action_cell.font = Font(color='2196F3')
                         elif action_value == 'increase':
-                            action_cell.font = Font(color='4CAF50')  # Green
+                            action_cell.font = Font(color='4CAF50')
                         elif action_value == 'decrease':
-                            action_cell.font = Font(color='F44336')  # Red
-            
-                        # Color only the data columns (from column C onwards)
+                            action_cell.font = Font(color='F44336')
+                        
                         for col_idx in range(data_start_col, len(pivot_df.columns) + 1):
                             cell = worksheet.cell(row=row_idx, column=col_idx)
                             cell_value = cell.value
-                
-                            # Only apply color if value is non-zero
+                            
                             if cell_value != 0 and cell_value != 0.0:
-                                if action_value == 'entry':
-                                    text_color = 'FFC107'  # Yellow
-                                elif action_value == 'exit':
-                                    text_color = '2196F3'  # Blue
-                                elif action_value in ['increase']:
-                                    text_color = '4CAF50'  # Green
-                                elif action_value in ['decrease']:
-                                    text_color = 'F44336'  # Red
+                                if action_value in ['increase', 'entry']:
+                                    text_color = '4CAF50'
+                                elif action_value in ['decrease', 'exit']:
+                                    text_color = 'F44336'
                                 else:
-                                    text_color = '000000'  # Black
+                                    text_color = '000000'
                             else:
-                                text_color = '000000'  # Black for zero values
-                
+                                text_color = '000000'
+                            
                             cell.font = Font(color=text_color)
-    
-                    output.seek(0)
-                    st.session_state.excel_data = output.getvalue()
-    
+                
+                output.seek(0)
+                st.session_state.excel_data = output.getvalue()
             except Exception as e:
                 st.error(f"Error generating Excel file: {str(e)}")
                 st.session_state.excel_data = None
             
-            # Generate and store PNG data
-            plot_output = io.BytesIO()
-            success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
-            if success:
-                plot_output.seek(0)
-                st.session_state.png_data = plot_output.getvalue()
-            else:
-                st.error(error)
+            # Generate PNG
+            try:
+                plot_output = io.BytesIO()
+                success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
+                if success:
+                    plot_output.seek(0)
+                    st.session_state.png_data = plot_output.getvalue()
+                else:
+                    st.error(error)
+                    st.session_state.png_data = None
+            except Exception as e:
+                st.error(f"Error generating plot: {str(e)}")
+                st.session_state.png_data = None
             
-            # Generate and store PDF data
-            with st.spinner("Generating PDF report..."):
-                pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
-            if pdf_error:
-                st.error(pdf_error)
-            else:
-                st.session_state.pdf_data = pdf_data
+            # Generate PDF
+            try:
+                with st.spinner("Generating PDF report..."):
+                    pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
+                if pdf_error:
+                    st.error(pdf_error)
+                    st.session_state.pdf_data = None
+                else:
+                    st.session_state.pdf_data = pdf_data
+            except Exception as e:
+                st.error(f"Error generating PDF: {str(e)}")
+                st.session_state.pdf_data = None
             
             st.session_state.files_generated = True
     
-    if st.session_state.files_generated:
+    if st.session_state.files_generated and st.session_state.pivot_df is not None:
         st.header("Summary Table")
         st.dataframe(st.session_state.pivot_df, use_container_width=True)
         
-        # Download Excel
-        st.download_button(
-            label="Download Changes Excel",
-            data=st.session_state.excel_data,
-            file_name="shareholder_changes.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_excel"
-        )
+        if st.session_state.excel_data:
+            st.download_button(
+                label="Download Changes Excel",
+                data=st.session_state.excel_data,
+                file_name="shareholder_changes.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_excel"
+            )
         
-        # Display Plot (Plotly)
         st.header("Shareholder Changes Visualization")
         st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
-        st.plotly_chart(st.session_state.fig, use_container_width=True)
+        if st.session_state.fig:
+            st.plotly_chart(st.session_state.fig, use_container_width=True)
         
-        # Download Plot (Matplotlib)
         if st.session_state.png_data:
             st.download_button(
                 label="Download Plot PNG",
@@ -642,7 +649,6 @@ if uploaded_file is not None:
                 key="download_plot"
             )
         
-        # Download PDF
         if st.session_state.pdf_data:
             st.download_button(
                 label="Download PDF Report",
