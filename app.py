@@ -11,18 +11,15 @@ from datetime import datetime
 
 def parse_sheet_date(sheet_name):
     """Parse different date formats from sheet names"""
-    # Try different formats
     formats = [
-        '%d-%b-%Y',      # 24-Oct-2025, 31-Oct-2025
         '%d_%B_%Y',      # 15_August_2025
+        '%d-%b-%Y',      # 12-Sep-2025
         '%d-%B-%Y',      # 12-September-2025
         '%d_%b_%Y',      # 15_Sep_2025
         '%Y-%m-%d',      # 2025-09-12
         '%m-%d-%Y',      # 09-12-2025
         '%d/%m/%Y',      # 12/09/2025
         '%m/%d/%Y',      # 09/12/2025
-        '%d %b %Y',      # 24 Oct 2025
-        '%d %B %Y',      # 24 October 2025
     ]
     
     for fmt in formats:
@@ -31,7 +28,6 @@ def parse_sheet_date(sheet_name):
         except ValueError:
             continue
     
-    # If no format works, return None
     return None
 
 def analyze_shareholder_changes(excel_file):
@@ -69,31 +65,38 @@ def analyze_shareholder_changes(excel_file):
         
         all_data = []
         for date in dates:
-            df = df_dict[date]
-            df = df.groupby([id_col, name_col])[holding_col].sum().reset_index()
+            df = df_dict[date].copy()
+            df = df.groupby([id_col, name_col], as_index=False)[holding_col].sum()
             df['Date'] = date
             all_data.append(df)
         
         all_df = pd.concat(all_data, ignore_index=True)
         
-        names = all_df[[id_col, name_col]].drop_duplicates().set_index(id_col)[name_col]
+        # Create a mapping of PAN NO to NAME
+        names_dict = {}
+        for _, row in all_df[[id_col, name_col]].drop_duplicates().iterrows():
+            names_dict[row[id_col]] = row[name_col]
         
         changes = []
         
-        # ALL Consecutive comparisons (not just first two)
+        # ALL Consecutive comparisons
         for i in range(len(dates) - 1):
             date1 = dates[i]
             date2 = dates[i + 1]
             date_label = f"{date1} to {date2}"
             
-            h1_df = df_dict[date1].groupby(id_col)[holding_col].sum()
-            h2_df = df_dict[date2].groupby(id_col)[holding_col].sum()
+            # Create proper dictionaries from grouped data
+            h1_df = df_dict[date1].groupby(id_col, as_index=False)[holding_col].sum()
+            h1_dict = dict(zip(h1_df[id_col], h1_df[holding_col]))
             
-            all_ids = set(h1_df.index) | set(h2_df.index)
+            h2_df = df_dict[date2].groupby(id_col, as_index=False)[holding_col].sum()
+            h2_dict = dict(zip(h2_df[id_col], h2_df[holding_col]))
+            
+            all_ids = set(h1_dict.keys()) | set(h2_dict.keys())
             
             for id_ in all_ids:
-                hold1 = h1_df.get(id_, 0)
-                hold2 = h2_df.get(id_, 0)
+                hold1 = h1_dict.get(id_, 0)
+                hold2 = h2_dict.get(id_, 0)
                 
                 if hold1 == hold2:
                     continue
@@ -108,7 +111,7 @@ def analyze_shareholder_changes(excel_file):
                     action = 'exit' if hold2 == 0 else 'decrease'
                     change_amount = hold2 - hold1
                 
-                name = names.get(id_, 'Unknown')
+                name = names_dict.get(id_, 'Unknown')
                 
                 changes.append({
                     'Name': name,
@@ -122,14 +125,17 @@ def analyze_shareholder_changes(excel_file):
         date2 = dates[-1]
         date_label = f"Overall_{date1} to {date2}"
         
-        h1_df = df_dict[date1].groupby(id_col)[holding_col].sum()
-        h2_df = df_dict[date2].groupby(id_col)[holding_col].sum()
+        h1_df = df_dict[date1].groupby(id_col, as_index=False)[holding_col].sum()
+        h1_dict = dict(zip(h1_df[id_col], h1_df[holding_col]))
         
-        all_ids = set(h1_df.index) | set(h2_df.index)
+        h2_df = df_dict[date2].groupby(id_col, as_index=False)[holding_col].sum()
+        h2_dict = dict(zip(h2_df[id_col], h2_df[holding_col]))
+        
+        all_ids = set(h1_dict.keys()) | set(h2_dict.keys())
         
         for id_ in all_ids:
-            hold1 = h1_df.get(id_, 0)
-            hold2 = h2_df.get(id_, 0)
+            hold1 = h1_dict.get(id_, 0)
+            hold2 = h2_dict.get(id_, 0)
             
             if hold1 == hold2:
                 continue
@@ -144,7 +150,7 @@ def analyze_shareholder_changes(excel_file):
                 action = 'exit' if hold2 == 0 else 'decrease'
                 change_amount = hold2 - hold1
             
-            name = names.get(id_, 'Unknown')
+            name = names_dict.get(id_, 'Unknown')
             
             changes.append({
                 'Name': name,
@@ -167,19 +173,17 @@ def analyze_shareholder_changes(excel_file):
         ).reset_index()
         pivot_df = pivot_df.fillna(0)
         
-        # Reorder columns: consecutive first (in chronological order), overall last
+        # Reorder columns
         date_columns = [col for col in pivot_df.columns if col not in ['Name', 'Action']]
         consecutive_labels = [f"{dates[i]} to {dates[i+1]}" for i in range(len(dates)-1)]
         overall_labels = [col for col in date_columns if col.startswith('Overall_')]
         
-        # Order: Name, Action, consecutive transitions (chronological), overall
         ordered_columns = ['Name', 'Action'] + consecutive_labels + overall_labels
         pivot_df = pivot_df[ordered_columns]
         
         # Aggregate counts for visualization
         counts = changes_df.groupby(['Date Transition', 'Action']).size().unstack(fill_value=0)
         
-        # Order date pairs: consecutive first, then overall
         date_pairs = consecutive_labels + overall_labels
         date_pairs = [dp for dp in date_pairs if dp in counts.index]
         
@@ -188,52 +192,36 @@ def analyze_shareholder_changes(excel_file):
         exits = counts.get('exit', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         entries = counts.get('entry', pd.Series(0, index=counts.index)).reindex(date_pairs, fill_value=0).tolist()
         
-        # Create Plotly chart for web display
+        # Create Plotly chart
         fig = go.Figure()
         
         x = date_pairs
         width = 0.2
         
         fig.add_trace(go.Bar(
-            x=x,
-            y=increases,
-            name='Increase',
-            marker_color='#4CAF50',
-            offset=-1.5*width,
-            width=width,
+            x=x, y=increases, name='Increase', marker_color='#4CAF50',
+            offset=-1.5*width, width=width,
             text=[int(i) if i > 0 else '' for i in increases],
             textposition='auto',
             hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Increase</extra>'
         ))
         fig.add_trace(go.Bar(
-            x=x,
-            y=decreases,
-            name='Decrease',
-            marker_color='#F44336',
-            offset=-0.5*width,
-            width=width,
+            x=x, y=decreases, name='Decrease', marker_color='#F44336',
+            offset=-0.5*width, width=width,
             text=[int(i) if i > 0 else '' for i in decreases],
             textposition='auto',
             hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Decrease</extra>'
         ))
         fig.add_trace(go.Bar(
-            x=x,
-            y=exits,
-            name='Exit',
-            marker_color='#2196F3',
-            offset=0.5*width,
-            width=width,
+            x=x, y=exits, name='Exit', marker_color='#2196F3',
+            offset=0.5*width, width=width,
             text=[int(i) if i > 0 else '' for i in exits],
             textposition='auto',
             hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Exit</extra>'
         ))
         fig.add_trace(go.Bar(
-            x=x,
-            y=entries,
-            name='Entry',
-            marker_color='#FFC107',
-            offset=1.5*width,
-            width=width,
+            x=x, y=entries, name='Entry', marker_color='#FFC107',
+            offset=1.5*width, width=width,
             text=[int(i) if i > 0 else '' for i in entries],
             textposition='auto',
             hovertemplate='%{y} shareholders<br>Date: %{x}<extra>Entry</extra>'
@@ -261,9 +249,6 @@ def analyze_shareholder_changes(excel_file):
 
 def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, output):
     try:
-        if not increases or not decreases or not exits or not entries or not date_pairs:
-            return False, "Missing data for plot generation"
-        
         plt.figure(figsize=(12, 8))
         x = np.arange(len(date_pairs))
         width = 0.2
@@ -280,7 +265,6 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
         plt.legend()
         plt.tight_layout()
         
-        # Add labels to bars
         for bars, heights in [(bars1, increases), (bars2, decreases), (bars3, exits), (bars4, entries)]:
             for bar, height in zip(bars, heights):
                 if height > 0:
@@ -295,42 +279,30 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
 
 def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs):
     try:
-        if pivot_df is None or increases is None:
-            return None, "Missing data for PDF generation"
-        
         with tempfile.TemporaryDirectory() as tmpdirname:
-            # Save pivot table to temporary Excel file
             temp_excel = os.path.join(tmpdirname, "temp_changes.xlsx")
             with pd.ExcelWriter(temp_excel, engine='openpyxl') as writer:
                 pivot_df.to_excel(writer, index=False, sheet_name='Changes')
-                # Ensure sheet is visible
-                worksheet = writer.sheets['Changes']
-                worksheet.sheet_state = 'visible'
             
-            # Generate matplotlib plot
             plot_path = os.path.join(tmpdirname, "plot.png")
             success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_path)
             if not success:
                 return None, error
             
-            # Initialize PDF
             pdf = FPDF(orientation='L', unit='mm', format='A4')
             pdf.set_auto_page_break(auto=True, margin=15)
             pdf.add_page()
             
-            # Set font
             pdf.set_font("Arial", "B", 16)
             pdf.cell(0, 10, "Shareholder Changes Report", ln=True, align='C')
             pdf.set_font("Arial", "", 12)
             pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%d-%B-%Y')}", ln=True, align='C')
             pdf.ln(10)
             
-            # Add pivot table
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "Legend", ln=True, align='L')
             pdf.set_font("Arial", "", 10)
             
-            # Create legend table
             legend_data = [
                 ['Value/Color', 'Meaning'],
                 ['0', 'No change in Holding'],
@@ -342,19 +314,13 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             
             legend_col_widths = [60, 100]
             
-            # Legend header
             pdf.set_fill_color(200, 200, 200)
             for text, width in zip(legend_data[0], legend_col_widths):
                 pdf.cell(width, 10, text, border=1, align='L', fill=True)
             pdf.ln()
             
-            # Legend rows with colored text
             legend_colors = [
-                (0, 0, 0),
-                (76, 175, 80),
-                (244, 67, 54),
-                (255, 193, 7),
-                (33, 150, 243)
+                (0, 0, 0), (76, 175, 80), (244, 67, 54), (255, 193, 7), (33, 150, 243)
             ]
             
             for i, (row_data, color) in enumerate(zip(legend_data[1:], legend_colors)):
@@ -373,12 +339,10 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             pdf.cell(0, 10, "Summary Table", ln=True, align='L')
             pdf.set_font("Arial", "", 10)
             
-            # Calculate column widths
             page_width = pdf.w - 2 * pdf.l_margin
             num_data_cols = len(pivot_df.columns) - 2
             col_widths = [page_width * 0.25, page_width * 0.15] + [page_width * 0.60 / num_data_cols] * num_data_cols
             
-            # Header
             pdf.set_fill_color(200, 200, 200)
             start_y = pdf.get_y()
             overall_col_idx = len(pivot_df.columns) - 1
@@ -399,7 +363,6 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             
             pdf.set_y(start_y + max_height)
             
-            # Table rows
             for _, row in pivot_df.iterrows():
                 action = row['Action']
                 
@@ -444,13 +407,12 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             
             pdf.set_text_color(0, 0, 0)
             
-            # Visualization page
             pdf.add_page()
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "Visualization", ln=True, align='L')
+            
             pdf.image(plot_path, x=10, y=pdf.get_y(), w=page_width)
             
-            # Save PDF
             pdf_path = os.path.join(tmpdirname, "report.pdf")
             pdf.output(pdf_path)
             with open(pdf_path, "rb") as f:
@@ -486,96 +448,68 @@ if 'files_generated' not in st.session_state:
     st.session_state.pdf_data = None
     st.session_state.pivot_df = None
     st.session_state.fig = None
-    st.session_state.increases = None
-    st.session_state.decreases = None
-    st.session_state.exits = None
-    st.session_state.entries = None
-    st.session_state.date_pairs = None
 
 if uploaded_file is not None:
     if st.button("Analyze"):
         with st.spinner("Analyzing data..."):
-            try:
-                pivot_df, fig, error, increases, decreases, exits, entries, date_pairs = analyze_shareholder_changes(uploaded_file)
-                st.write(f"Debug - pivot_df is None: {pivot_df is None}")
-                st.write(f"Debug - error: {error}")
-                st.write(f"Debug - increases: {increases}")
-                st.write(f"Debug - date_pairs: {date_pairs}")
-            except Exception as e:
-                st.error(f"Fatal error during analysis: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
-                st.session_state.files_generated = False
-                pivot_df = None
-                error = str(e)
+            pivot_df, fig, error, increases, decreases, exits, entries, date_pairs = analyze_shareholder_changes(uploaded_file)
         
         if error:
-            st.error(f"Analysis error: {error}")
-            st.session_state.files_generated = False
-        elif pivot_df is None:
-            st.error("Analysis returned no data. Please check your input file.")
-            st.session_state.files_generated = False
+            st.error(error)
         else:
             st.success("Analysis complete!")
             
-            # Store all data in session state
             st.session_state.pivot_df = pivot_df
             st.session_state.fig = fig
-            st.session_state.increases = increases
-            st.session_state.decreases = decreases
-            st.session_state.exits = exits
-            st.session_state.entries = entries
-            st.session_state.date_pairs = date_pairs
             
-            # Generate Excel with error handling
+            output = io.BytesIO()
             try:
-                output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     pivot_df.to_excel(writer, index=False, sheet_name='Changes', startrow=8)
-                    
+        
                     from openpyxl.styles import Font, Alignment
                     workbook = writer.book
                     worksheet = writer.sheets['Changes']
+        
                     worksheet.sheet_state = 'visible'
-                    
-                    # Add Legend
+        
                     worksheet.merge_cells('A1:B1')
                     legend_title = worksheet['A1']
                     legend_title.value = 'Legend'
                     legend_title.font = Font(bold=True, size=14)
                     legend_title.alignment = Alignment(horizontal='center')
-                    
+        
                     worksheet['A2'] = 'Value/Color'
                     worksheet['B2'] = 'Meaning'
                     worksheet['A2'].font = Font(bold=True)
                     worksheet['B2'].font = Font(bold=True)
-                    
+        
                     worksheet['A3'] = '0'
                     worksheet['B3'] = 'No change in Holding'
-                    
+        
                     worksheet['A4'] = 'Green text'
                     worksheet['B4'] = 'Increase in holding'
                     worksheet['A4'].font = Font(color='4CAF50')
-                    
+        
                     worksheet['A5'] = 'Red text'
                     worksheet['B5'] = 'Decrease in holding'
                     worksheet['A5'].font = Font(color='F44336')
-                    
+        
                     worksheet['A6'] = 'Yellow text (entry)'
                     worksheet['B6'] = 'New shareholder entry'
                     worksheet['A6'].font = Font(color='FFC107')
-                    
+        
                     worksheet['A7'] = 'Blue text (exit)'
                     worksheet['B7'] = 'Shareholder exit'
                     worksheet['A7'].font = Font(color='2196F3')
-                    
+        
                     action_col = 2
                     data_start_col = 3
-                    
+        
                     for row_idx in range(10, len(pivot_df) + 10):
                         action_cell = worksheet.cell(row=row_idx, column=action_col)
                         action_value = action_cell.value
-                        
+            
                         if action_value == 'entry':
                             action_cell.font = Font(color='FFC107')
                         elif action_value == 'exit':
@@ -584,75 +518,66 @@ if uploaded_file is not None:
                             action_cell.font = Font(color='4CAF50')
                         elif action_value == 'decrease':
                             action_cell.font = Font(color='F44336')
-                        
+            
                         for col_idx in range(data_start_col, len(pivot_df.columns) + 1):
                             cell = worksheet.cell(row=row_idx, column=col_idx)
                             cell_value = cell.value
-                            
+                
                             if cell_value != 0 and cell_value != 0.0:
-                                if action_value in ['increase', 'entry']:
+                                if action_value == 'entry':
+                                    text_color = 'FFC107'
+                                elif action_value == 'exit':
+                                    text_color = '2196F3'
+                                elif action_value in ['increase']:
                                     text_color = '4CAF50'
-                                elif action_value in ['decrease', 'exit']:
+                                elif action_value in ['decrease']:
                                     text_color = 'F44336'
                                 else:
                                     text_color = '000000'
                             else:
                                 text_color = '000000'
-                            
-                            cell.font = Font(color=text_color)
                 
-                output.seek(0)
-                st.session_state.excel_data = output.getvalue()
+                            cell.font = Font(color=text_color)
+    
+                    output.seek(0)
+                    st.session_state.excel_data = output.getvalue()
+    
             except Exception as e:
                 st.error(f"Error generating Excel file: {str(e)}")
                 st.session_state.excel_data = None
             
-            # Generate PNG
-            try:
-                plot_output = io.BytesIO()
-                success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
-                if success:
-                    plot_output.seek(0)
-                    st.session_state.png_data = plot_output.getvalue()
-                else:
-                    st.error(error)
-                    st.session_state.png_data = None
-            except Exception as e:
-                st.error(f"Error generating plot: {str(e)}")
-                st.session_state.png_data = None
+            plot_output = io.BytesIO()
+            success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_output)
+            if success:
+                plot_output.seek(0)
+                st.session_state.png_data = plot_output.getvalue()
+            else:
+                st.error(error)
             
-            # Generate PDF
-            try:
-                with st.spinner("Generating PDF report..."):
-                    pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
-                if pdf_error:
-                    st.error(pdf_error)
-                    st.session_state.pdf_data = None
-                else:
-                    st.session_state.pdf_data = pdf_data
-            except Exception as e:
-                st.error(f"Error generating PDF: {str(e)}")
-                st.session_state.pdf_data = None
+            with st.spinner("Generating PDF report..."):
+                pdf_data, pdf_error = generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs)
+            if pdf_error:
+                st.error(pdf_error)
+            else:
+                st.session_state.pdf_data = pdf_data
             
             st.session_state.files_generated = True
     
-    if st.session_state.files_generated and st.session_state.pivot_df is not None:
+    if st.session_state.files_generated:
         st.header("Summary Table")
         st.dataframe(st.session_state.pivot_df, use_container_width=True)
         
-        if st.session_state.excel_data:
-            st.download_button(
-                label="Download Changes Excel",
-                data=st.session_state.excel_data,
-                file_name="shareholder_changes.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_excel"
-            )
+        st.download_button(
+            label="Download Changes Excel",
+            data=st.session_state.excel_data,
+            file_name="shareholder_changes.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_excel"
+        )
         
         st.header("Shareholder Changes Visualization")
         st.markdown("Hover over the bars to see the number of shareholders and date transitions.")
-        if st.session_state.fig:
-            st.plotly_chart(st.session_state.fig, use_container_width=True)
+        st.plotly_chart(st.session_state.fig, use_container_width=True)
         
         if st.session_state.png_data:
             st.download_button(
