@@ -464,10 +464,11 @@ if uploaded_file is not None:
             
             output = io.BytesIO()
             try:
+                from openpyxl.styles import Font, Alignment
+                
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     pivot_df.to_excel(writer, index=False, sheet_name='Changes', startrow=8)
-        
-                    from openpyxl.styles import Font, Alignment
+                    
                     workbook = writer.book
                     worksheet = writer.sheets['Changes']
         
@@ -538,9 +539,10 @@ if uploaded_file is not None:
                                 text_color = '000000'
                 
                             cell.font = Font(color=text_color)
-    
-                    output.seek(0)
-                    st.session_state.excel_data = output.getvalue()
+                
+                # IMPORTANT: Save outside the context manager
+                output.seek(0)
+                st.session_state.excel_data = output.getvalue()
     
             except Exception as e:
                 st.error(f"Error generating Excel file: {str(e)}")
