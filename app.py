@@ -361,12 +361,22 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                     
                     # Set text color based on Action for data columns (not Name/Action columns)
                     if i >= 2:  # Data columns start from index 2
-                        if action in ['increase', 'entry']:
-                            pdf.set_text_color(76, 175, 80)  # Green text
-                        elif action in ['decrease', 'exit']:
-                            pdf.set_text_color(244, 67, 54)  # Red text
+                        # Check if value is non-zero (comparing the actual value from row, not the string)
+                        val_numeric = row.iloc[i]
+                        try:
+                            is_non_zero = float(val_numeric) != 0.0
+                        except (ValueError, TypeError):
+                            is_non_zero = False
+                        
+                        if is_non_zero:
+                            if action in ['increase', 'entry']:
+                                pdf.set_text_color(76, 175, 80)  # Green text
+                            elif action in ['decrease', 'exit']:
+                                pdf.set_text_color(244, 67, 54)  # Red text
+                            else:
+                                pdf.set_text_color(0, 0, 0)  # Black text
                         else:
-                            pdf.set_text_color(0, 0, 0)  # Black text
+                            pdf.set_text_color(0, 0, 0)  # Black text for zero values
                     else:
                         pdf.set_text_color(0, 0, 0)  # Black text for Name and Action columns
                     
