@@ -292,7 +292,7 @@ def generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, o
 def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs):
     try:
         with tempfile.TemporaryDirectory() as tmpdirname:
-            # plot for last page
+            # Generate the plot for the visualization page
             plot_path = os.path.join(tmpdirname, "plot.png")
             success, error = generate_matplotlib_plot(increases, decreases, exits, entries, date_pairs, plot_path)
             if not success:
@@ -302,19 +302,39 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             pdf.set_auto_page_break(auto=True, margin=15)
             pdf.add_page()
 
-            # Title
+            # ----- TITLE -----
             pdf.set_font("Arial", "B", 16)
             pdf.cell(0, 10, "Shareholder Changes Report", ln=True, align='C')
             pdf.set_font("Arial", "", 12)
             pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%d-%B-%Y')}", ln=True, align='C')
-            pdf.ln(6)
+            pdf.ln(8)
 
-            # ----- Summary Table (navy header, wrapped, aligned, colored numbers)
+            # ----- LEGEND SECTION -----
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, "Legend:", ln=True, align='L')
+            pdf.set_font("Arial", "", 10)
+
+            # Draw colored boxes with labels
+            legends = [
+                ("Increase", (76, 175, 80)),
+                ("Decrease", (244, 67, 54)),
+                ("Entry", (255, 193, 7)),
+                ("Exit", (33, 150, 243)),
+            ]
+            start_x = pdf.get_x()
+            for label, color in legends:
+                pdf.set_fill_color(*color)
+                pdf.cell(10, 6, "", fill=True, border=1)
+                pdf.cell(25, 6, f" {label}", border=0, ln=0)
+                pdf.set_x(pdf.get_x() + 5)
+            pdf.ln(10)
+
+            # ----- SUMMARY TABLE -----
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "Summary Table", ln=True, align='L')
             pdf.set_font("Arial", "", 10)
 
-            # wrapped column names identical to Excel rendering
+            # Wrapped column names identical to Excel rendering
             disp_cols = []
             for c in pivot_df.columns:
                 if c in ("Name", "Action"):
@@ -327,14 +347,16 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
 
             page_width = pdf.w - 2 * pdf.l_margin
             num_data_cols = len(pivot_df.columns) - 2
-            col_widths = [page_width * 0.28, page_width * 0.12] + [page_width * 0.60 / max(1, num_data_cols)] * num_data_cols
+            col_widths = [page_width * 0.28, page_width * 0.12] + [
+                page_width * 0.60 / max(1, num_data_cols)
+            ] * num_data_cols
 
             # Header styling (navy fill, white text)
-            pdf.set_fill_color(11, 45, 107)  # 0B2D6B
+            pdf.set_fill_color(11, 45, 107)
             pdf.set_text_color(255, 255, 255)
             start_y = pdf.get_y()
             current_x = pdf.get_x()
-            header_row_height = 8  # good height for two lines
+            header_row_height = 8
 
             for text, width in zip(disp_cols, col_widths):
                 pdf.set_xy(current_x, start_y)
@@ -344,15 +366,15 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
             pdf.set_y(start_y + header_row_height)
             pdf.set_text_color(0, 0, 0)
 
-            # Body rows
+            # ----- TABLE BODY -----
             for _, row in pivot_df.iterrows():
                 row_height = 8
-
-                # Name (left)
                 pdf.set_font("Arial", "", 10)
+
+                # Name
                 pdf.cell(col_widths[0], row_height, str(row["Name"]), border=1, align='L')
 
-                # Action (left, colored)
+                # Action (colored)
                 action = str(row["Action"]).strip().lower()
                 if action == 'entry':
                     pdf.set_text_color(255, 193, 7)
@@ -367,7 +389,7 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                 pdf.cell(col_widths[1], row_height, row["Action"], border=1, align='L')
                 pdf.set_text_color(0, 0, 0)
 
-                # Numbers (centered; color by action; 0 black)
+                # Numbers
                 for i, col in enumerate(pivot_df.columns[2:], start=2):
                     val = row[col]
                     try:
@@ -385,14 +407,13 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                     else:
                         pdf.set_text_color(0, 0, 0)
 
-                    # integer-like formatting
                     txt = f"{int(num):,}" if float(num).is_integer() else f"{num:,.0f}"
                     pdf.cell(col_widths[i], row_height, txt, border=1, align='C')
 
                 pdf.ln()
                 pdf.set_text_color(0, 0, 0)
 
-            # Visualization page
+            # ----- VISUALIZATION PAGE -----
             pdf.add_page()
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "Visualization", ln=True, align='L')
