@@ -456,7 +456,7 @@ if uploaded_file is not None:
                 from openpyxl.styles import Font, Alignment, PatternFill
                 from openpyxl.utils import get_column_letter
 
-                # Build wrapped header labels (2 lines)
+                # Build wrapped header labels (2 lines) — fixed (no f-string with \n in expression)
                 display_df = pivot_df.copy()
                 wrapped_cols = []
                 for c in display_df.columns:
@@ -464,7 +464,7 @@ if uploaded_file is not None:
                         wrapped_cols.append(c)
                     elif str(c).startswith("Overall_"):
                         base = str(c).replace("Overall_", "")
-                        wrapped_cols.append(f"Overall\n{base.replace(' to ', ' to\n')}")
+                        wrapped_cols.append("Overall\n" + base.replace(" to ", " to\n"))
                     else:
                         wrapped_cols.append(str(c).replace(" to ", " to\n"))
                 display_df.columns = wrapped_cols
