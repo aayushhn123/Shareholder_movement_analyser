@@ -591,9 +591,9 @@ if uploaded_file is not None:
                     output.seek(0)
                     st.session_state.excel_data = output.getvalue()
     
-                except Exception as e:
-                    st.error(f"Error generating Excel file: {str(e)}")
-                    st.session_state.excel_data = None
+            except Exception as e:
+                st.error(f"Error generating Excel file: {str(e)}")
+                st.session_state.excel_data = None
             
             # Generate and store PNG data
             plot_output = io.BytesIO()
