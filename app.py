@@ -435,10 +435,38 @@ if uploaded_file is not None:
             st.session_state.pivot_df = pivot_df
             st.session_state.fig = fig
             
-            # Generate and store Excel data
+            # Generate and store Excel data with colored text
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 pivot_df.to_excel(writer, index=False, sheet_name='Changes')
+                
+                # Apply text color formatting
+                from openpyxl.styles import Font
+                worksheet = writer.sheets['Changes']
+                
+                # Find the Action column (column B, index 2)
+                action_col = 2
+                # Data columns start from column C (index 3)
+                data_start_col = 3
+                
+                # Iterate through rows (starting from row 2, after header)
+                for row_idx in range(2, len(pivot_df) + 2):
+                    action_cell = worksheet.cell(row=row_idx, column=action_col)
+                    action_value = action_cell.value
+                    
+                    # Apply color to data columns based on action
+                    if action_value in ['increase', 'entry']:
+                        text_color = '4CAF50'  # Green
+                    elif action_value in ['decrease', 'exit']:
+                        text_color = 'F44336'  # Red
+                    else:
+                        text_color = '000000'  # Black
+                    
+                    # Color only the data columns (from column C onwards)
+                    for col_idx in range(data_start_col, len(pivot_df.columns) + 1):
+                        cell = worksheet.cell(row=row_idx, column=col_idx)
+                        cell.font = Font(color=text_color)
+            
             output.seek(0)
             st.session_state.excel_data = output.getvalue()
             
