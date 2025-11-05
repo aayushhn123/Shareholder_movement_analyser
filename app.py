@@ -454,17 +454,22 @@ if uploaded_file is not None:
                     action_cell = worksheet.cell(row=row_idx, column=action_col)
                     action_value = action_cell.value
                     
-                    # Apply color to data columns based on action
-                    if action_value in ['increase', 'entry']:
-                        text_color = '4CAF50'  # Green
-                    elif action_value in ['decrease', 'exit']:
-                        text_color = 'F44336'  # Red
-                    else:
-                        text_color = '000000'  # Black
-                    
                     # Color only the data columns (from column C onwards)
                     for col_idx in range(data_start_col, len(pivot_df.columns) + 1):
                         cell = worksheet.cell(row=row_idx, column=col_idx)
+                        cell_value = cell.value
+                        
+                        # Only apply color if value is non-zero
+                        if cell_value != 0 and cell_value != 0.0:
+                            if action_value in ['increase', 'entry']:
+                                text_color = '4CAF50'  # Green
+                            elif action_value in ['decrease', 'exit']:
+                                text_color = 'F44336'  # Red
+                            else:
+                                text_color = '000000'  # Black
+                        else:
+                            text_color = '000000'  # Black for zero values
+                        
                         cell.font = Font(color=text_color)
             
             output.seek(0)
