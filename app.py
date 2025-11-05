@@ -344,27 +344,38 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                 pdf.rect(current_x, start_y, width, max_height, 'F')
                 # Render text centered in the fixed height
                 pdf.set_xy(current_x, start_y)  # Reset to start of column
+                pdf.set_text_color(0, 0, 0)  # Black text for headers
                 pdf.multi_cell(width, 5, text, border=1, align='C', ln=0)
                 current_x += width  # Move to next column position
             
             pdf.set_y(start_y + max_height)  # Move to the row below
             
-            # Table rows with color coding based on Action
+            # Table rows with colored text based on Action
             for _, row in pivot_df.iterrows():
                 action = row['Action']
-                if action in ['increase', 'entry']:
-                    pdf.set_fill_color(76, 175, 80)  # Green for increase/entry
-                elif action in ['decrease', 'exit']:
-                    pdf.set_fill_color(244, 67, 54)  # Red for decrease/exit
-                else:
-                    pdf.set_fill_color(240, 240, 240)  # Light gray for others
                 
-                for val, width in zip(row, col_widths):
+                for i, (val, width) in enumerate(zip(row, col_widths)):
                     val_str = str(val)
                     if len(val_str) > 30:  # Truncate long text
                         val_str = val_str[:27] + "..."
-                    pdf.cell(width, 10, val_str, border=1, align='L', fill=True)
+                    
+                    # Set text color based on Action for data columns (not Name/Action columns)
+                    if i >= 2:  # Data columns start from index 2
+                        if action in ['increase', 'entry']:
+                            pdf.set_text_color(76, 175, 80)  # Green text
+                        elif action in ['decrease', 'exit']:
+                            pdf.set_text_color(244, 67, 54)  # Red text
+                        else:
+                            pdf.set_text_color(0, 0, 0)  # Black text
+                    else:
+                        pdf.set_text_color(0, 0, 0)  # Black text for Name and Action columns
+                    
+                    pdf.cell(width, 10, val_str, border=1, align='L')
+                
                 pdf.ln()
+            
+            # Reset text color to black
+            pdf.set_text_color(0, 0, 0)
             
             # Start new page for Visualization
             pdf.add_page()
