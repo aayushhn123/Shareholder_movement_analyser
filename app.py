@@ -577,14 +577,14 @@ if uploaded_file is not None:
                                     text_color = 'FFC107'  # Yellow
                                 elif action_value == 'exit':
                                     text_color = '2196F3'  # Blue
-                                if action_value in ['increase']:
+                                elif action_value in ['increase']:
                                     text_color = '4CAF50'  # Green
                                 elif action_value in ['decrease']:
                                     text_color = 'F44336'  # Red
                                 else:
                                     text_color = '000000'  # Black
-                                else:
-                                    text_color = '000000'  # Black for zero values
+                            else:
+                                text_color = '000000'  # Black for zero values
                 
                                 cell.font = Font(color=text_color)
     
