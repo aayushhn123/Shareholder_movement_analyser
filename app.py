@@ -13,14 +13,16 @@ def parse_sheet_date(sheet_name):
     """Parse different date formats from sheet names"""
     # Try different formats
     formats = [
+        '%d-%b-%Y',      # 24-Oct-2025, 31-Oct-2025
         '%d_%B_%Y',      # 15_August_2025
-        '%d-%b-%Y',      # 12-Sep-2025
         '%d-%B-%Y',      # 12-September-2025
         '%d_%b_%Y',      # 15_Sep_2025
         '%Y-%m-%d',      # 2025-09-12
         '%m-%d-%Y',      # 09-12-2025
         '%d/%m/%Y',      # 12/09/2025
         '%m/%d/%Y',      # 09/12/2025
+        '%d %b %Y',      # 24 Oct 2025
+        '%d %B %Y',      # 24 October 2025
     ]
     
     for fmt in formats:
@@ -493,10 +495,22 @@ if 'files_generated' not in st.session_state:
 if uploaded_file is not None:
     if st.button("Analyze"):
         with st.spinner("Analyzing data..."):
-            pivot_df, fig, error, increases, decreases, exits, entries, date_pairs = analyze_shareholder_changes(uploaded_file)
+            try:
+                pivot_df, fig, error, increases, decreases, exits, entries, date_pairs = analyze_shareholder_changes(uploaded_file)
+                st.write(f"Debug - pivot_df is None: {pivot_df is None}")
+                st.write(f"Debug - error: {error}")
+                st.write(f"Debug - increases: {increases}")
+                st.write(f"Debug - date_pairs: {date_pairs}")
+            except Exception as e:
+                st.error(f"Fatal error during analysis: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+                st.session_state.files_generated = False
+                pivot_df = None
+                error = str(e)
         
         if error:
-            st.error(error)
+            st.error(f"Analysis error: {error}")
             st.session_state.files_generated = False
         elif pivot_df is None:
             st.error("Analysis returned no data. Please check your input file.")
