@@ -371,35 +371,39 @@ def generate_pdf(pivot_df, fig, increases, decreases, exits, entries, date_pairs
                     if len(val_str) > 30:
                         val_str = val_str[:27] + "..."
                     
-                    if i == 1:
+                    if i == 1:  # Action column
                         if action == 'entry':
-                            pdf.set_text_color(255, 193, 7)
+                            pdf.set_text_color(255, 193, 7)  # Yellow
                         elif action == 'exit':
-                            pdf.set_text_color(33, 150, 243)
+                            pdf.set_text_color(33, 150, 243)  # Blue
                         elif action == 'increase':
-                            pdf.set_text_color(76, 175, 80)
+                            pdf.set_text_color(76, 175, 80)  # Green
                         elif action == 'decrease':
-                            pdf.set_text_color(244, 67, 54)
+                            pdf.set_text_color(244, 67, 54)  # Red
                         else:
-                            pdf.set_text_color(0, 0, 0)
-                    elif i >= 2:
+                            pdf.set_text_color(0, 0, 0)  # Black
+                    elif i >= 2:  # Data columns
                         val_numeric = row.iloc[i]
                         try:
-                            is_non_zero = float(val_numeric) != 0.0
+                            is_non_zero = (val_numeric != 0 and val_numeric != 0.0)
                         except (ValueError, TypeError):
                             is_non_zero = False
                         
                         if is_non_zero:
-                            if action in ['increase', 'entry']:
-                                pdf.set_text_color(76, 175, 80)
-                            elif action in ['decrease', 'exit']:
-                                pdf.set_text_color(244, 67, 54)
+                            if action == 'entry':
+                                pdf.set_text_color(255, 193, 7)  # Yellow
+                            elif action == 'exit':
+                                pdf.set_text_color(33, 150, 243)  # Blue
+                            elif action == 'increase':
+                                pdf.set_text_color(76, 175, 80)  # Green
+                            elif action == 'decrease':
+                                pdf.set_text_color(244, 67, 54)  # Red
                             else:
-                                pdf.set_text_color(0, 0, 0)
+                                pdf.set_text_color(0, 0, 0)  # Black
                         else:
-                            pdf.set_text_color(0, 0, 0)
-                    else:
-                        pdf.set_text_color(0, 0, 0)
+                            pdf.set_text_color(0, 0, 0)  # Black for zero values
+                    else:  # Name column
+                        pdf.set_text_color(0, 0, 0)  # Black
                     
                     pdf.cell(width, 10, val_str, border=1, align='L')
                 
