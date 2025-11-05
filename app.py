@@ -586,7 +586,7 @@ if uploaded_file is not None:
                             else:
                                 text_color = '000000'  # Black for zero values
                 
-                                cell.font = Font(color=text_color)
+                            cell.font = Font(color=text_color)
     
                     output.seek(0)
                     st.session_state.excel_data = output.getvalue()
