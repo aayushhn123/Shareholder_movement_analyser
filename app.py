@@ -501,86 +501,99 @@ if uploaded_file is not None:
             
             # Generate and store Excel data with colored text
             output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                pivot_df.to_excel(writer, index=False, sheet_name='Changes', startrow=8)
-                
-                # Apply text color formatting
-                from openpyxl.styles import Font, Alignment
-                worksheet = writer.sheets['Changes']
-                
-                # Add Legend at the top
-                worksheet.merge_cells('A1:B1')
-                legend_title = worksheet['A1']
-                legend_title.value = 'Legend'
-                legend_title.font = Font(bold=True, size=14)
-                legend_title.alignment = Alignment(horizontal='center')
-                
-                # Legend headers
-                worksheet['A2'] = 'Value/Color'
-                worksheet['B2'] = 'Meaning'
-                worksheet['A2'].font = Font(bold=True)
-                worksheet['B2'].font = Font(bold=True)
-                
-                # Legend rows
-                worksheet['A3'] = '0'
-                worksheet['B3'] = 'No change in Holding'
-                
-                worksheet['A4'] = 'Green text'
-                worksheet['B4'] = 'Increase in holding'
-                worksheet['A4'].font = Font(color='4CAF50')
-                
-                worksheet['A5'] = 'Red text'
-                worksheet['B5'] = 'Decrease in holding'
-                worksheet['A5'].font = Font(color='F44336')
-                
-                worksheet['A6'] = 'Yellow text (entry)'
-                worksheet['B6'] = 'New shareholder entry'
-                worksheet['A6'].font = Font(color='FFC107')
-                
-                worksheet['A7'] = 'Blue text (exit)'
-                worksheet['B7'] = 'Shareholder exit'
-                worksheet['A7'].font = Font(color='2196F3')
-                
-                # Find the Action column (column B, index 2) - now at row 9 onwards
-                action_col = 2
-                # Data columns start from column C (index 3)
-                data_start_col = 3
-                
-                # Iterate through rows (starting from row 10, after header at row 9)
-                for row_idx in range(10, len(pivot_df) + 10):
-                    action_cell = worksheet.cell(row=row_idx, column=action_col)
-                    action_value = action_cell.value
-                    
-                    # Color the Action column itself
-                    if action_value == 'entry':
-                        action_cell.font = Font(color='FFC107')  # Yellow
-                    elif action_value == 'exit':
-                        action_cell.font = Font(color='2196F3')  # Blue
-                    elif action_value == 'increase':
-                        action_cell.font = Font(color='4CAF50')  # Green
-                    elif action_value == 'decrease':
-                        action_cell.font = Font(color='F44336')  # Red
-                    
-                    # Color only the data columns (from column C onwards)
-                    for col_idx in range(data_start_col, len(pivot_df.columns) + 1):
-                        cell = worksheet.cell(row=row_idx, column=col_idx)
-                        cell_value = cell.value
-                        
-                        # Only apply color if value is non-zero
-                        if cell_value != 0 and cell_value != 0.0:
-                            if action_value in ['increase', 'entry']:
-                                text_color = '4CAF50'  # Green
-                            elif action_value in ['decrease', 'exit']:
-                                text_color = 'F44336'  # Red
-                            else:
-                                text_color = '000000'  # Black
-                        else:
-                            text_color = '000000'  # Black for zero values
-                        
-                        cell.font = Font(color=text_color)
+            try:
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    pivot_df.to_excel(writer, index=False, sheet_name='Changes', startrow=8)
+        
+                    # Apply text color formatting
+                    from openpyxl.styles import Font, Alignment
+                    workbook = writer.book
+                    worksheet = writer.sheets['Changes']
+        
+                    # Ensure the sheet is visible
+                    worksheet.sheet_state = 'visible'
+        
+                    # Add Legend at the top
+                    worksheet.merge_cells('A1:B1')
+                    legend_title = worksheet['A1']
+                    legend_title.value = 'Legend'
+                    legend_title.font = Font(bold=True, size=14)
+                    legend_title.alignment = Alignment(horizontal='center')
+        
+                    # Legend headers
+                    worksheet['A2'] = 'Value/Color'
+                    worksheet['B2'] = 'Meaning'
+                    worksheet['A2'].font = Font(bold=True)
+                    worksheet['B2'].font = Font(bold=True)
+        
+                    # Legend rows
+                    worksheet['A3'] = '0'
+                    worksheet['B3'] = 'No change in Holding'
+        
+                    worksheet['A4'] = 'Green text'
+                    worksheet['B4'] = 'Increase in holding'
+                    worksheet['A4'].font = Font(color='4CAF50')
+        
+                    worksheet['A5'] = 'Red text'
+                    worksheet['B5'] = 'Decrease in holding'
+                    worksheet['A5'].font = Font(color='F44336')
+        
+                    worksheet['A6'] = 'Yellow text (entry)'
+                    worksheet['B6'] = 'New shareholder entry'
+                    worksheet['A6'].font = Font(color='FFC107')
+        
+                    worksheet['A7'] = 'Blue text (exit)'
+                    worksheet['B7'] = 'Shareholder exit'
+                    worksheet['A7'].font = Font(color='2196F3')
+        
+                    # Find the Action column (column B, index 2) - now at row 9 onwards
+                    action_col = 2
+                    # Data columns start from column C (index 3)
+                    data_start_col = 3
+        
+                    # Iterate through rows (starting from row 10, after header at row 9)
+                    for row_idx in range(10, len(pivot_df) + 10):
+                        action_cell = worksheet.cell(row=row_idx, column=action_col)
+                        action_value = action_cell.value
             
-            output.seek(0)
-            st.session_state.excel_data = output.getvalue()
+                        # Color the Action column itself
+                        if action_value == 'entry':
+                            action_cell.font = Font(color='FFC107')  # Yellow
+                        elif action_value == 'exit':
+                            action_cell.font = Font(color='2196F3')  # Blue
+                        elif action_value == 'increase':
+                            action_cell.font = Font(color='4CAF50')  # Green
+                        elif action_value == 'decrease':
+                            action_cell.font = Font(color='F44336')  # Red
+            
+                        # Color only the data columns (from column C onwards)
+                        for col_idx in range(data_start_col, len(pivot_df.columns) + 1):
+                            cell = worksheet.cell(row=row_idx, column=col_idx)
+                            cell_value = cell.value
+                
+                            # Only apply color if value is non-zero
+                            if cell_value != 0 and cell_value != 0.0:
+                                if action_value == 'entry':
+                                    text_color = 'FFC107'  # Yellow
+                                elif action_value == 'exit':
+                                    text_color = '2196F3'  # Blue
+                                if action_value in ['increase']:
+                                    text_color = '4CAF50'  # Green
+                                elif action_value in ['decrease']:
+                                    text_color = 'F44336'  # Red
+                                else:
+                                    text_color = '000000'  # Black
+                                else:
+                                    text_color = '000000'  # Black for zero values
+                
+                                cell.font = Font(color=text_color)
+    
+                    output.seek(0)
+                    st.session_state.excel_data = output.getvalue()
+    
+                except Exception as e:
+                    st.error(f"Error generating Excel file: {str(e)}")
+                    st.session_state.excel_data = None
             
             # Generate and store PNG data
             plot_output = io.BytesIO()
